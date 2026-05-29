@@ -1,0 +1,2 @@
+# No third-party dependencies — uses Python standard library only (socket, math, random, argparse)
+# Python >= 3.10 required for dict[str, float] type hints in function signatures

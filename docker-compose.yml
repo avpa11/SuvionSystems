@@ -1,29 +1,71 @@
-version: "3"
+version: "3.8"
 
 services:
-  web:
-    container_name: web
-    build:
-      context: .
-      dockerfile: ./apps/web/Dockerfile
-    restart: always
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    restart: unless-stopped
     ports:
-      - 4000:4000
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./infra/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
     networks:
       - app_network
+
+  signalk:
+    image: signalk/signalk-server:latest
+    container_name: signalk
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - signalk_data:/home/node/.signalk
+    environment:
+      - SIGNALK_DISABLE_SECURITY=true
+    networks:
+      - app_network
+
   api:
     container_name: api
     build:
       context: .
       dockerfile: ./apps/api/Dockerfile
-    restart: always
+    restart: unless-stopped
     ports:
-      - 4001:4001
+      - "4001:4001"
+    environment:
+      - PORT=4001
+      - MONGO_URI=mongodb://mongo:27017/suvion
+      - SIGNALK_HOST=signalk
+      - SIGNALK_PORT=3000
+      - NMEA_PORT=10110
+      - DEFAULT_FUEL_TYPE=diesel
+      - VESSEL_ID=DEMO-VESSEL-001
+    depends_on:
+      - mongo
     networks:
       - app_network
 
-# Define a network, which allows containers to communicate
-# with each other, by using their container name as a hostname
+  web:
+    container_name: web
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - NEXT_PUBLIC_API_HOST=http://api:4001
+    depends_on:
+      - api
+    networks:
+      - app_network
+
+volumes:
+  mongo_data:
+  signalk_data:
+
 networks:
   app_network:
     external: true

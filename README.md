@@ -1,75 +1,145 @@
-# Turborepo Docker starter
+# Suvion Systems — Environmental Monitoring Dashboard
 
-This is a community-maintained example. If you experience a problem, please submit a pull request with a fix. GitHub Issues will be closed.
+Maritime vessel sustainability tracking for small vessel operators. Provides real-time sensor
+data ingestion, automated CO₂ emissions calculations, and sustainability report generation.
 
-## Using this example
+## Architecture
 
-Run the following command:
+```
+simulation/nmea_generator.py   →  UDP :10110
+                                         ↓
+                               apps/api  (Node.js adapter + REST API)
+                               ├── NMEA UDP listener on :10110
+                               ├── Signal K WebSocket bridge (optional)
+                               ├── @repo/emissions engine + 60 s cache
+                               ├── MongoDB persistence + 30-day retention
+                               └── Socket.IO broadcast + GET /report
+                                         ↓
+                               apps/web  (Next.js dashboard :4000)
+                               ├── Fuel · Generator · Water · Temperature widgets
+                               ├── CO₂ emissions widget + fuel-type selector
+                               └── Date-range report builder → CSV / PDF download
+```
+
+## Quick Start
+
+### 1. Install dependencies
 
 ```sh
-npx create-turbo@latest -e with-docker
+npm install
 ```
 
-## What's inside?
+### 2. Start MongoDB
 
-This Turborepo includes the following:
-
-### Apps and Packages
-
-- `web`: a [Next.js](https://nextjs.org/) app
-- `api`: an [Express](https://expressjs.com/) server
-- `@repo/ui`: a React component library
-- `@repo/logger`: Isomorphic logger (a small wrapper around console.log)
-- `@repo/eslint-config`: ESLint presets
-- `@repo/typescript-config`: tsconfig.json's used throughout the monorepo
-- `@repo/jest-presets`: Jest configurations
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Docker
-
-This repo is configured to be built with Docker, and Docker compose. To build all apps in this repo:
-
-```
-# Install dependencies
-yarn install
-
-# Create a network, which allows containers to communicate
-# with each other, by using their container name as a hostname
+```sh
 docker network create app_network
-
-# Build prod using new BuildKit engine
-COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml build
-
-# Start prod in detached mode
-docker-compose -f docker-compose.yml up -d
+docker-compose up -d mongo
 ```
 
-Open http://localhost:3000.
+### 3. Start the API server
 
-To shutdown all running containers:
+```sh
+# Development (hot-reload via tsx)
+npm run dev -w api
+
+# Production
+npm run build -w api && npm run start -w api
+```
+
+### 4. Start the dashboard
+
+```sh
+npm run dev -w web
+```
+
+Open http://localhost:4000.
+
+### 5. Run the NMEA simulator
+
+```sh
+# Cruising (default) — fuel 12.5 L/h, generator 8.2 A
+python3 simulation/nmea_generator.py
+
+# Vessel at anchor — low fuel, high generator load
+python3 simulation/nmea_generator.py --scenario anchoring
+
+# Generator cycling — triggers non-compliant period detection
+python3 simulation/nmea_generator.py --scenario generator_cycling
+
+# Run for a fixed duration (seconds)
+python3 simulation/nmea_generator.py --duration 86400
+```
+
+### 6. Full Docker stack
+
+```sh
+docker network create app_network
+COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1 docker-compose build
+docker-compose up -d
+```
+
+## Package overview
+
+| Package | Description |
+|---------|-------------|
+| `apps/api` | Express + Socket.IO adapter, MongoDB persistence, `GET /report` REST endpoint |
+| `apps/web` | Next.js 14 SPA dashboard |
+| `packages/emissions` | Stateless CO₂ engine — IMO MEPC.361(78) factors, 60 s cache |
+| `simulation/` | Python NMEA0183 generator (three vessel-state scenarios) |
+
+## Module system
+
+Both `packages/emissions` and `apps/api` are true ESM packages (`"type": "module"`).
+TypeScript is configured with `"module": "NodeNext"` and `"moduleResolution": "NodeNext"`,
+so all relative imports use explicit `.js` extensions (resolved to `.ts` at compile time).
+
+Some older packages (`ajv`, `ajv-formats`) ship CJS types that lose call-signature
+information under NodeNext ESM resolution. These are handled with a one-line cast at the
+import site, documented with a comment so the reason is clear.
+
+## Report API
 
 ```
-# Stop running containers started by docker-compse
- docker-compose -f docker-compose.yml down
+GET /report?startDate=<ISO8601>&endDate=<ISO8601>[&format=csv|pdf][&fuelType=diesel]
 ```
 
-### Remote Caching
+Returns a JSON payload validated against `apps/api/src/schemas/report-schema.ts`
+(12 required fields). Append `&format=csv` or `&format=pdf` for file downloads.
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+Response logs are written to `reporting-api.log`; responses exceeding 5 s are
+flagged `SLOW_REPORT`.
 
-This example includes optional remote caching. In the Dockerfiles of the apps, uncomment the build arguments for `TURBO_TEAM` and `TURBO_TOKEN`. Then, pass these build arguments to your Docker build.
+## Running tests
 
-You can test this behavior using a command like:
+```sh
+# Emissions unit tests — 120 scenarios, all ≤0.5 % error vs MEPC.361(78)
+npm test -w @repo/emissions
 
-`docker build -f apps/web/Dockerfile . --build-arg TURBO_TEAM=“your-team-name” --build-arg TURBO_TOKEN=“your-token“ --no-cache`
+# Reporting API integration tests (uses mongodb-memory-server, no real DB needed)
+npm test -w api
+```
 
-### Utilities
+Both test suites run with `NODE_OPTIONS='--experimental-vm-modules'` for ESM support.
 
-This Turborepo has some additional tools already setup for you:
+## Emissions calculation
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Jest](https://jestjs.io) test runner for all things JavaScript
-- [Prettier](https://prettier.io) for code formatting
+```
+CO₂ (kg) = consumption (L) × density (kg/L) × Cf (kg CO₂/kg fuel)
+```
+
+Reference: IMO MEPC.361(78), §4 — GHG Intensity Calculation Guidelines.
+
+| Fuel | Cf | Density |
+|------|----|---------|
+| Diesel | 3.206 | 0.840 kg/L |
+| MGO | 3.206 | 0.875 kg/L |
+| MDO | 3.206 | 0.875 kg/L |
+| HFO | 3.114 | 0.991 kg/L |
+| LNG | 2.750 | 0.450 kg/L |
+
+## Data governance
+
+- Sensor and emissions documents older than 30 days are deleted daily by the
+  retention scheduler in `apps/api/src/db/retention.ts`.
+- Every deletion is logged to `data-lifecycle.log` with timestamp and count.
+- A post-demo full wipe is available via the exported `runDataWipe()` function.
