@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import { MessageCircle, Send, X } from "lucide-react";
 import type { SensorState, SensorUpdate } from "../hooks/useSensorData";
+import { RealtimeAgentPanel, type RealtimeAgentPanelHandle, type RealtimeStatus } from "./RealtimeAgentPanel";
 
 type ChatRole = "assistant" | "user";
 
@@ -71,10 +73,12 @@ function transcript(messages: ChatMessage[]): string {
 
 export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
   const apiHost = useMemo(() => process.env.NEXT_PUBLIC_API_HOST ?? "http://localhost:4001", []);
+  const realtimeRef = useRef<RealtimeAgentPanelHandle | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<AgentStatus | null>(null);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
@@ -85,8 +89,12 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
 
   async function loadStatus() {
     try {
-      const response = await fetch(`${apiHost}/validation/agent/status`);
-      setStatus(await response.json());
+      const [agentResponse, realtimeResponse] = await Promise.all([
+        fetch(`${apiHost}/validation/agent/status`),
+        fetch(`${apiHost}/validation/realtime/status`),
+      ]);
+      setStatus(await agentResponse.json());
+      setRealtimeStatus(await realtimeResponse.json());
     } catch {
       setStatus({
         configured: false,
@@ -94,7 +102,16 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
         status: "not_configured",
         message: "API connection unavailable.",
       });
+      setRealtimeStatus(null);
     }
+  }
+
+  function appendMessage(role: ChatRole, content: string) {
+    setMessages((current) => {
+      const previous = current[current.length - 1];
+      if (previous?.role === role && previous.content === content) return current;
+      return [...current, { id: Date.now() + Math.floor(Math.random() * 1000), role, content }];
+    });
   }
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -109,6 +126,11 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
     setBusy(true);
 
     try {
+      if (realtimeRef.current?.sendTextMessage(content)) {
+        setBusy(false);
+        return;
+      }
+
       const prompt = [
         "Answer as Suvion's maritime operations and emissions assistant.",
         "Use the live sensor snapshot when relevant. Do not claim certification or legal compliance.",
@@ -161,10 +183,12 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
           <div className="agent-chat__header">
             <div>
               <div className="agent-chat__title">Suvion Agent</div>
-              <div className="agent-chat__status">{status?.status ?? "checking"}</div>
+              <div className="agent-chat__status">
+                Text {status?.status ?? "checking"} / Voice {realtimeStatus?.status ?? "checking"}
+              </div>
             </div>
             <button type="button" className="agent-chat__close" onClick={toggleOpen} aria-label="Close chat">
-              X
+              <X size={17} aria-hidden="true" />
             </button>
           </div>
 
@@ -178,6 +202,17 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
           </div>
 
           {status?.message && <div className="agent-chat__notice">{status.message}</div>}
+          {realtimeStatus?.message && <div className="agent-chat__notice">{realtimeStatus.message}</div>}
+
+          <div className="agent-chat__voice">
+            <RealtimeAgentPanel
+              ref={realtimeRef}
+              apiHost={apiHost}
+              status={realtimeStatus}
+              onStatusMessage={(message) => appendMessage("assistant", message)}
+              onTranscript={(role, text) => appendMessage(role, text)}
+            />
+          </div>
 
           <form className="agent-chat__form" onSubmit={sendMessage}>
             <textarea
@@ -187,6 +222,7 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
               rows={2}
             />
             <button type="submit" disabled={busy || draft.trim().length === 0}>
+              <Send size={16} aria-hidden="true" />
               Send
             </button>
           </form>
@@ -194,6 +230,7 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
       )}
 
       <button type="button" className="agent-chat__launcher" onClick={toggleOpen} aria-expanded={open}>
+        <MessageCircle size={17} aria-hidden="true" />
         AI Chat
       </button>
     </div>

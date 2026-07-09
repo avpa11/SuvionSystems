@@ -158,6 +158,16 @@ export async function getRealtimeSessionConfig(): Promise<RealtimeSessionConfigR
         config: {
           outputModalities: ["text", "audio"],
           audio: {
+            input: {
+              transcription: {
+                model: process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe",
+              },
+              turnDetection: {
+                type: "server_vad",
+                createResponse: true,
+                interruptResponse: true,
+              },
+            },
             output: {
               voice: realtimeVoice(),
             },
@@ -186,6 +196,13 @@ export async function getRealtimeSessionConfig(): Promise<RealtimeSessionConfigR
   }
 }
 
+export function buildRealtimeCallsSessionPayload(config: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...config,
+    type: "realtime",
+  };
+}
+
 export async function createRealtimeCall(sdp: string): Promise<RealtimeCallResponse> {
   const configResponse = await getRealtimeSessionConfig();
 
@@ -201,7 +218,7 @@ export async function createRealtimeCall(sdp: string): Promise<RealtimeCallRespo
   const url = process.env.OPENAI_REALTIME_CALLS_URL || "https://api.openai.com/v1/realtime/calls";
   const form = new FormData();
   form.set("sdp", sdp);
-  form.set("session", JSON.stringify(configResponse.config));
+  form.set("session", JSON.stringify(buildRealtimeCallsSessionPayload(configResponse.config)));
 
   try {
     const response = await fetch(url, {

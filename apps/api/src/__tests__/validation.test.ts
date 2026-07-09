@@ -3,7 +3,11 @@ import fs from "fs";
 import { checkAbbHealth, checkAbbRoute } from "../services/abb.js";
 import { refreshValidationSources } from "../services/officialSources.js";
 import { runValidationAgent } from "../services/validationAgent.js";
-import { getRealtimeAgentStatus, getRealtimeSessionConfig } from "../services/realtimeAgent.js";
+import {
+  buildRealtimeCallsSessionPayload,
+  getRealtimeAgentStatus,
+  getRealtimeSessionConfig,
+} from "../services/realtimeAgent.js";
 import { getCurrentWeather } from "../services/weather.js";
 import {
   clearVesselContextForTest,
@@ -85,6 +89,20 @@ describe("validation services", () => {
 
     expect(status.status).toBe("disabled");
     expect(config.status).toBe("disabled");
+  });
+
+  test("realtime calls payload includes the required session type", () => {
+    const payload = buildRealtimeCallsSessionPayload({
+      type: "session",
+      model: "gpt-realtime",
+      instructions: "Answer vessel questions.",
+    });
+
+    expect(payload).toMatchObject({
+      type: "realtime",
+      model: "gpt-realtime",
+      instructions: "Answer vessel questions.",
+    });
   });
 
   test("weather lookup reports not configured without OpenWeather key", async () => {
