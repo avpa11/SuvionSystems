@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "${env:FIRECRAWL_API_KEY}"
+      }
+    },
+    "signalk": {
+      "command": "npx",
+      "args": ["-y", "signalk-mcp-server"],
+      "env": {
+        "SIGNALK_URL": "${env:SIGNALK_URL}"
+      }
+    }
+  }
+}

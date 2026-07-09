@@ -8,6 +8,7 @@ export {
   NON_COMPLIANT_FUEL_RATE_LH,
   NON_COMPLIANT_CO2_RATE_KGH,
   MDO_FACTOR_MEPC_245_66,
+  isFuelType,
 } from "./constants.js";
 export type { FuelType } from "./constants.js";
 export type { CacheEntry } from "./cache.js";

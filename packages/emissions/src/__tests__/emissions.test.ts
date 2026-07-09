@@ -1,8 +1,8 @@
 /**
  * Emissions engine unit tests.
  *
- * Reference: IMO MEPC.361(78) Guidelines on the method of calculation of the
- * attained GHG intensity — Table 1 (Cf values) and §4 (calculation formula).
+ * Reference: IMO MEPC.352(78) CII G1 for the calculation method, with CF
+ * values aligned to MEPC.308(73), as amended, and MEPC.364(79).
  *
  * Formula under test:
  *   CO₂ (kg) = consumptionL × density (kg/L) × Cf (kg CO₂/kg fuel)
@@ -39,7 +39,7 @@ const CONSUMPTION_RATES_LH = [
   20.0, 30.0, 50.0, 75.0, 100.0, 150.0, 200.0, 300.0, 400.0, 500.0,
 ];
 
-describe("calculateCO2 — accuracy vs MEPC.361(78) reference", () => {
+describe("calculateCO2 — accuracy vs IMO reference factors", () => {
   let scenarioCount = 0;
 
   FUEL_TYPES.forEach((fuelType: FuelType) => {

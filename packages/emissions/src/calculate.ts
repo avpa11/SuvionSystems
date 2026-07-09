@@ -10,7 +10,7 @@ export class FuelTypeError extends Error {
 /**
  * Calculate CO₂ mass from a fuel consumption volume.
  *
- * Formula (MEPC.361(78) §4):
+ * Formula (IMO MEPC.352(78) CII G1):
  *   CO₂ (kg) = consumptionL × density (kg/L) × Cf (kg CO₂/kg fuel)
  *
  * @param fuelType  Fuel type identifier

@@ -1,0 +1,198 @@
+import "dotenv/config";
+import http from "http";
+import fs from "fs";
+import path from "path";
+import express from "express";
+import cors from "cors";
+import { Server as SocketIOServer } from "socket.io";
+import { connectMongo, SensorReading as SensorReadingModel, EmissionsReading } from "./db/mongodb.js";
+import { scheduleRetention } from "./db/retention.js";
+import { startNmeaListener } from "./adapter/nmea.js";
+import { startSignalKAdapter } from "./adapter/signalk.js";
+import { EmissionsCache, isFuelType } from "@repo/emissions";
+import type { FuelType } from "@repo/emissions";
+import reportRouter from "./routes/report.js";
+import validationRouter from "./routes/validation.js";
+import anomaliesRouter from "./routes/anomalies.js";
+import weatherRouter from "./routes/weather.js";
+import { log } from "@repo/logger";
+import type { SensorReading, EmissionsBroadcast, SensorBroadcast, SensorStream } from "./types.js";
+import { getRuntimeStatus } from "./services/status.js";
+import { startAnomalyScheduler } from "./services/anomalies.js";
+import { recordVesselReading } from "./services/vesselContext.js";
+
+const PORT = parseInt(process.env.PORT ?? "4001", 10);
+const API_LOG = path.join(process.cwd(), "dashboard-client.log");
+const WRITE_BATCH_MS = 500;
+
+// ─── App setup ────────────────────────────────────────────────────────────────
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use("/report", reportRouter);
+app.use("/validation", validationRouter);
+app.use("/anomalies", anomaliesRouter);
+app.use("/weather", weatherRouter);
+
+app.get("/health", (_req, res) => res.json({ status: "ok", ts: new Date().toISOString() }));
+app.get("/status", (_req, res) => res.json(getRuntimeStatus()));
+
+const httpServer = http.createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: { origin: "*", methods: ["GET", "POST"] },
+});
+
+// ─── Connection logging ───────────────────────────────────────────────────────
+
+function appendLog(entry: Record<string, unknown>): void {
+  fs.appendFileSync(API_LOG, JSON.stringify(entry) + "\n", "utf8");
+}
+
+io.on("connection", (socket) => {
+  const connectTime = Date.now();
+  appendLog({ event: "connection_established", socketId: socket.id, ts: new Date().toISOString() });
+  log(`Dashboard client connected: ${socket.id}`);
+
+  socket.on("disconnect", () => {
+    appendLog({
+      event: "disconnection",
+      socketId: socket.id,
+      durationMs: Date.now() - connectTime,
+      ts: new Date().toISOString(),
+    });
+    log(`Dashboard client disconnected: ${socket.id}`);
+  });
+
+  // Emit sensor:reset so the dashboard clears stale values on reconnect
+  socket.emit("sensor:reset");
+});
+
+// ─── Emissions cache & write buffer ──────────────────────────────────────────
+
+const configuredFuelType = process.env.DEFAULT_FUEL_TYPE ?? "";
+let currentFuelType: FuelType = isFuelType(configuredFuelType) ? configuredFuelType : "diesel";
+const emissionsCache = new EmissionsCache();
+const writeBuffer: SensorReading[] = [];
+
+setInterval(async () => {
+  if (writeBuffer.length === 0) return;
+  const batch = writeBuffer.splice(0, writeBuffer.length);
+  try {
+    await SensorReadingModel.insertMany(
+      batch.map((r) => ({ ...r, timestamp: r.timestamp }))
+    );
+  } catch (err) {
+    log(`MongoDB write error: ${err}`);
+  }
+}, WRITE_BATCH_MS);
+
+// ─── Sensor reading handler ───────────────────────────────────────────────────
+
+// Only these four streams are written to MongoDB (enum-validated by the server-side schema)
+const PERSIST_STREAMS = new Set<SensorStream>(["fuel", "generator", "water", "temperature"]);
+
+function handleReading(reading: SensorReading): void {
+  const emitTs = Date.now();
+  recordVesselReading(reading);
+
+  if (PERSIST_STREAMS.has(reading.stream)) {
+    writeBuffer.push(reading);
+  }
+
+  const broadcast: SensorBroadcast = {
+    stream: reading.stream,
+    value: reading.value,
+    unit: reading.unit,
+    timestamp: reading.timestamp.toISOString(),
+  };
+
+  io.emit("sensor:update", broadcast);
+
+  appendLog({
+    event: "message_received",
+    stream: reading.stream,
+    value: reading.value,
+    unit: reading.unit,
+    emitTs,
+    ts: new Date(emitTs).toISOString(),
+  });
+
+  // Compute CO₂ on every fuel-flow reading
+  if (reading.stream === "fuel") {
+    const entry = emissionsCache.get(currentFuelType, reading.value);
+
+    const emissionsBroadcast: EmissionsBroadcast = {
+      stream: "co2",
+      value: Math.round(entry.co2Kg * 1000) / 1000,
+      unit: "kg/h",
+      fuelType: currentFuelType,
+      cacheHit: entry.cacheHit,
+      timestamp: new Date().toISOString(),
+    };
+
+    io.emit("sensor:update", emissionsBroadcast);
+    recordVesselReading(emissionsBroadcast);
+
+    appendLog({
+      event: "emissions_computed",
+      ...emissionsBroadcast,
+      cacheHit: entry.cacheHit,
+    });
+
+    // Persist emissions reading
+    EmissionsReading.create({
+      fuelType: currentFuelType,
+      fuelRateLh: reading.value,
+      co2RateKgh: entry.co2Kg,
+      consumptionL: reading.value,
+      co2Kg: entry.co2Kg,
+      cacheHit: entry.cacheHit,
+      timestamp: reading.timestamp,
+    }).catch((err: unknown) => log(`Emissions persist error: ${err}`));
+  }
+}
+
+// ─── Accept fuel-type updates from the dashboard ──────────────────────────────
+
+io.on("connection", (socket) => {
+  socket.on("set:fuelType", (fuelType: string) => {
+    if (isFuelType(fuelType)) {
+      currentFuelType = fuelType;
+      emissionsCache.invalidate();
+      log(`Fuel type changed to ${fuelType}; cache invalidated`);
+    }
+  });
+});
+
+// ─── Start adapters ───────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  await connectMongo();
+  scheduleRetention();
+
+  // Primary: direct NMEA UDP listener (always active for simulation)
+  const stopNmea = startNmeaListener(handleReading);
+
+  // Optional: Signal K WebSocket bridge (passive, no-op if unreachable)
+  const stopSignalK = startSignalKAdapter(handleReading);
+  const stopAnomalyScheduler = startAnomalyScheduler(io);
+
+  httpServer.listen(PORT, () => {
+    appendLog({ event: "server_started", port: PORT, ts: new Date().toISOString() });
+    log(`API server listening on port ${PORT}`);
+  });
+
+  process.on("SIGTERM", () => {
+    stopNmea();
+    stopSignalK();
+    stopAnomalyScheduler();
+    httpServer.close();
+    process.exit(0);
+  });
+}
+
+main().catch((err) => {
+  log(`Fatal: ${err}`);
+  process.exit(1);
+});

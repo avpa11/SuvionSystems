@@ -1,0 +1,9 @@
+# The anomaly-detection engine (isolation_forest.py, anomaly_detection.py) and
+# its test suite are pure Python standard library — no install required to run:
+#
+#     python -m unittest discover analytics
+#     python analytics/anomaly_detection.py            # synthetic demo
+#
+# pymongo is only needed to run detection against a live MongoDB instance via
+# anomaly_detection.run_from_mongo() / the --mongo-uri CLI flag.
+pymongo>=4.6,<5
