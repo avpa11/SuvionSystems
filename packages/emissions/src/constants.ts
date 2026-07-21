@@ -1,11 +1,10 @@
 /**
  * IMO GHG emission factors (kg CO₂ per kg of fuel).
- * Primary source: MEPC.361(78) Guidelines on GHG intensity calculation.
- * Fallback reference: MEPC.245(66) Table 2 (where MEPC.361(78) is silent).
+ * Primary regulatory calculation source: IMO MEPC.352(78) CII G1.
+ * Conversion-factor references: MEPC.308(73), as amended, and MEPC.364(79).
  *
- * MDO factor: MEPC.361(78) uses 3.206 kg CO₂/kg (same as MGO).
- * MEPC.245(66) lists MDO at 3.206 as well; the 3.179 value sometimes cited
- * refers to an earlier draft. MEPC.361(78) is authoritative here.
+ * These factors are mass-basis values. Volume-based readings are first
+ * converted to fuel mass with the representative densities below.
  */
 export const EMISSION_FACTORS: Record<FuelType, number> = {
   diesel: 3.206,
@@ -15,7 +14,7 @@ export const EMISSION_FACTORS: Record<FuelType, number> = {
   LNG: 2.750,
 };
 
-/** MEPC.245(66) fallback MDO factor kept for auditability. */
+/** Legacy MEPC.245(66) fallback MDO factor kept for auditability only. */
 export const MDO_FACTOR_MEPC_245_66 = 3.179;
 
 /**
@@ -33,6 +32,10 @@ export const FUEL_DENSITY: Record<FuelType, number> = {
 export type FuelType = "diesel" | "MGO" | "MDO" | "HFO" | "LNG";
 
 export const FUEL_TYPES: FuelType[] = ["diesel", "MGO", "MDO", "HFO", "LNG"];
+
+export function isFuelType(value: string): value is FuelType {
+  return FUEL_TYPES.includes(value as FuelType);
+}
 
 /** Emissions cache TTL in milliseconds (60 seconds). */
 export const CACHE_TTL_MS = 60_000;

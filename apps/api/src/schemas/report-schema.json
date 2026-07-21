@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "suvion-report-v1",
+  "title": "Suvion Sustainability Report",
+  "description": "All 12 required fields for an IMO-aligned vessel sustainability report",
+  "type": "object",
+  "required": [
+    "vesselId",
+    "reportPeriodStart",
+    "reportPeriodEnd",
+    "generatedAt",
+    "fuelType",
+    "fuelConsumedL",
+    "co2EmittedKg",
+    "waterUsageL",
+    "generatorCurrentAvgA",
+    "avgTemperatureC",
+    "carbonIntensityKgPerL",
+    "nonCompliantPeriods"
+  ],
+  "properties": {
+    "vesselId": {
+      "type": "string",
+      "description": "Vessel MMSI or internal identifier"
+    },
+    "reportPeriodStart": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC start of reporting period"
+    },
+    "reportPeriodEnd": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC end of reporting period"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp when the report was generated"
+    },
+    "fuelType": {
+      "type": "string",
+      "enum": ["diesel", "MGO", "MDO", "HFO", "LNG"],
+      "description": "Primary fuel type used during the period"
+    },
+    "fuelConsumedL": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total fuel consumed in litres"
+    },
+    "co2EmittedKg": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total CO₂ emitted in kilograms (summed from emissions collection)"
+    },
+    "waterUsageL": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total fresh water usage in litres"
+    },
+    "generatorCurrentAvgA": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Average generator current in amps over the period"
+    },
+    "avgTemperatureC": {
+      "type": "number",
+      "description": "Average ambient temperature in Celsius over the period"
+    },
+    "carbonIntensityKgPerL": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Carbon intensity: kg CO₂ per litre of fuel consumed"
+    },
+    "nonCompliantPeriods": {
+      "type": "array",
+      "description": "Hourly windows where fuel or CO₂ thresholds were exceeded",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "reason", "value", "threshold"],
+        "properties": {
+          "start": { "type": "string", "format": "date-time" },
+          "end": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string" },
+          "value": { "type": "number" },
+          "threshold": { "type": "number" }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
