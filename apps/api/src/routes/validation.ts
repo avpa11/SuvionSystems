@@ -1,5 +1,4 @@
 import express, { Router, type Request, type Response } from "express";
-import { checkAbbHealth, checkAbbRoute } from "../services/abb.js";
 import { getValidationSources, refreshValidationSources } from "../services/officialSources.js";
 import { getValidationAgentStatus, runValidationAgent } from "../services/validationAgent.js";
 import {
@@ -22,16 +21,6 @@ router.post("/sources/refresh", async (_req: Request, res: Response) => {
 
 router.get("/vessel-context", async (_req: Request, res: Response) => {
   res.json(await getVesselContext());
-});
-
-router.get("/abb/health", async (_req: Request, res: Response) => {
-  const response = await checkAbbHealth();
-  res.status(response.status === "error" ? 502 : 200).json(response);
-});
-
-router.post("/abb/route-check", async (req: Request, res: Response) => {
-  const response = await checkAbbRoute(req.body ?? {});
-  res.status(response.status === "error" ? 502 : 200).json(response);
 });
 
 router.get("/agent/status", (_req: Request, res: Response) => {

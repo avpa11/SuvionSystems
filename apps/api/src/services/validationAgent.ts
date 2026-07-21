@@ -1,6 +1,5 @@
 import { Agent, run, tool, type FunctionTool } from "@openai/agents";
 import { calculateCO2, carbonIntensity, isFuelType } from "@repo/emissions";
-import { checkAbbHealth, checkAbbRoute } from "./abb.js";
 import { getValidationSources } from "./officialSources.js";
 import { formatVesselContextForAgent, getVesselContext } from "./vesselContext.js";
 
@@ -70,7 +69,8 @@ export const validationAgentTools: FunctionTool<unknown, any, unknown>[] = [
   }),
   tool({
     name: "lookup_official_sources",
-    description: "Return cached official IMO, Signal K, ABB, and Firecrawl validation source metadata.",
+    description:
+      "Return cached official IMO and Signal K source metadata, refreshed through Firecrawl when configured.",
     strict: false,
     parameters: emptyObjectParameters,
     execute: () => getValidationSources(),
@@ -84,28 +84,6 @@ export const validationAgentTools: FunctionTool<unknown, any, unknown>[] = [
     execute: () => getVesselContext(),
   }),
   tool({
-    name: "check_abb_health",
-    description: "Check whether ABB OAuth and optional health-check configuration are reachable.",
-    strict: false,
-    parameters: emptyObjectParameters,
-    execute: () => checkAbbHealth(),
-  }),
-  tool({
-    name: "compare_abb_route_fixture",
-    description: "Submit a route-check payload to ABB and report whether the result is comparable.",
-    strict: false,
-    parameters: {
-      type: "object",
-      properties: {
-        localFuelConsumedL: { type: "number" },
-        localCo2EmittedKg: { type: "number" },
-      },
-      required: [],
-      additionalProperties: true,
-    },
-    execute: (input) => checkAbbRoute(objectArg(input)),
-  }),
-  tool({
     name: "summarize_validation",
     description: "Build a deterministic validation summary from available local and external checks.",
     strict: false,
@@ -113,7 +91,6 @@ export const validationAgentTools: FunctionTool<unknown, any, unknown>[] = [
       type: "object",
       properties: {
         sourceCount: { type: "number" },
-        abbStatus: { type: "string" },
       },
       required: [],
       additionalProperties: true,
@@ -122,9 +99,8 @@ export const validationAgentTools: FunctionTool<unknown, any, unknown>[] = [
       const args = objectArg(input);
       return {
         summary:
-          "Suvion calculations remain local and deterministic; external services provide source evidence and reasonableness checks only.",
+          "Suvion calculations remain local and deterministic; external services provide source evidence only.",
         sourceCount: Number(args.sourceCount ?? getValidationSources().sources.length),
-        abbStatus: String(args.abbStatus ?? "unknown"),
       };
     },
   }),
@@ -134,7 +110,7 @@ export function createValidationAgent(): Agent {
   return new Agent({
     name: "Suvion Maritime Validation Agent",
     instructions:
-      "Answer vessel operations and CO2 emissions questions using deterministic Suvion tools. Use get_live_vessel_context before answering questions about current vessel state, position, signals, emissions, averages, or anomalies. Use official-source lookup before making source claims. Treat ABB as a reasonableness check, not regulatory truth. Never claim certification or guaranteed IMO compliance.",
+      "Answer vessel operations and CO2 emissions questions using deterministic Suvion tools. Use get_live_vessel_context before answering questions about current vessel state, position, signals, emissions, averages, or anomalies. Use official-source lookup before making source claims. Never claim certification or guaranteed IMO compliance.",
     tools: validationAgentTools,
   });
 }

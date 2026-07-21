@@ -22,12 +22,6 @@ Important unit handling:
 * `navigation.speedOverGround` is m/s and converted to knots.
 * `tanks.freshWater.0.currentLevel` is a tank level ratio, not a water usage rate; the app exposes it as tank level and excludes it from water-usage reports.
 
-## ABB
-
-ABB Voyage Optimization APIs can validate whether a route/weather optimization result is directionally comparable with local report numbers. ABB results are not used as the source of truth for IMO formulas.
-
-The API marks an ABB route response `not_comparable` unless compatible fuel or CO2 totals can be found in the response.
-
 ## Firecrawl
 
 Firecrawl refreshes source evidence with official-domain filtering. If credentials are unavailable or the network fails, reports keep static source references and continue generation.

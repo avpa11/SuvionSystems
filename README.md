@@ -14,7 +14,7 @@ simulation/nmea_generator.py   →  UDP :10110
                                ├── @repo/emissions engine + 60 s cache
                                ├── MongoDB persistence + 30-day retention
                                ├── anomaly scheduler (optional)
-                               ├── Firecrawl / ABB / OpenAI validation surfaces
+                               ├── Firecrawl / OpenAI validation surfaces
                                ├── OpenAI realtime maritime agent proxy (optional)
                                ├── OpenWeather lookup (optional)
                                └── Socket.IO broadcast + REST APIs
@@ -23,7 +23,7 @@ simulation/nmea_generator.py   →  UDP :10110
                                ├── Cog-style live vessel, environment, and navigation instruments
                                ├── CO₂ emissions cog + fuel-type selector
                                ├── weather panel with vessel/browser geolocation
-                               ├── OpenAI / Firecrawl / ABB integration panel
+                               ├── OpenAI / Firecrawl integration panel
                                ├── anomaly alert panel
                                └── Date-range report builder → CSV / PDF download
 ```
@@ -190,8 +190,6 @@ Rate readings are integrated over elapsed sample intervals. Fuel and water are t
 | `GET /status` | NMEA, Signal K, MongoDB, and anomaly scheduler status |
 | `GET /validation/sources` | Cached official-source metadata |
 | `POST /validation/sources/refresh` | Firecrawl refresh restricted to official domains |
-| `GET /validation/abb/health` | ABB OAuth/health status |
-| `POST /validation/abb/route-check` | ABB route reasonableness check |
 | `GET /validation/agent/status` | OpenAI validation agent configuration/status |
 | `POST /validation/agent` | Optional OpenAI Agents SDK validation run |
 | `GET /validation/realtime/status` | Realtime maritime agent configuration/status |
@@ -212,7 +210,7 @@ npm run smoke:runtime
 ```
 
 This checks MongoDB, API health/status, report generation, validation-source metadata,
-ABB graceful-response behavior, anomaly endpoint availability, and the dashboard.
+anomaly endpoint availability, and the dashboard.
 
 See [docs/integration-testing.md](docs/integration-testing.md) for the full Week 10-11
 verification sequence.

@@ -1,0 +1,40 @@
+{
+  "identity": {
+    "url": "http://localhost:4000/",
+    "title": "Suvion Systems — Environmental Dashboard",
+    "bodyLength": 1942,
+    "overlay": false,
+    "live": true,
+    "vesselValues": true
+  },
+  "interaction": {
+    "vesselToggle": {
+      "found": true
+    },
+    "vesselHidden": true,
+    "vesselRestored": true
+  },
+  "integrations": {
+    "found": true,
+    "hasAbb": false,
+    "cards": [
+      "Firecrawl Sources",
+      "OpenAI Validation",
+      "OpenAI Realtime Agent",
+      "OpenWeather"
+    ],
+    "validationTools": null
+  },
+  "report": {
+    "generateTriggered": true,
+    "ready": true,
+    "status": "warning",
+    "kpis": [
+      "CO₂ EMITTED\n622.1\nKG",
+      "FUEL CONSUMED\n216.5\nL",
+      "AVG CO₂ RATE\n36.2\nKG/H",
+      "CARBON INTENSITY\n2.873\nKG/L"
+    ]
+  },
+  "consoleProblems": []
+}

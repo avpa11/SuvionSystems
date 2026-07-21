@@ -53,14 +53,6 @@ services:
       - OPENAI_REALTIME_CALLS_URL=${OPENAI_REALTIME_CALLS_URL:-}
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
       - OPENWEATHER_BASE_URL=${OPENWEATHER_BASE_URL:-}
-      - ABB_TOKEN_URL=${ABB_TOKEN_URL:-}
-      - ABB_CLIENT_ID=${ABB_CLIENT_ID:-}
-      - ABB_CLIENT_SECRET=${ABB_CLIENT_SECRET:-}
-      - ABB_OAUTH_SCOPE=${ABB_OAUTH_SCOPE:-}
-      - ABB_BASE_URL=${ABB_BASE_URL:-}
-      - ABB_WS_URL=${ABB_WS_URL:-}
-      - ABB_HEALTH_URL=${ABB_HEALTH_URL:-}
-      - ABB_ROUTE_CHECK_ENDPOINT=${ABB_ROUTE_CHECK_ENDPOINT:-}
       - ANOMALY_DETECTION_ENABLED=${ANOMALY_DETECTION_ENABLED:-false}
       - ANOMALY_LOOKBACK_MINUTES=${ANOMALY_LOOKBACK_MINUTES:-1440}
       - ANOMALY_INTERVAL_MS=${ANOMALY_INTERVAL_MS:-300000}
@@ -81,6 +73,22 @@ services:
       - "4000:4000"
     environment:
       - NEXT_PUBLIC_API_HOST=${NEXT_PUBLIC_API_HOST:-http://localhost:4001}
+    depends_on:
+      - api
+    networks:
+      - app_network
+
+  # NMEA0183 mock feed. Runs inside app_network so UDP reaches the api
+  # container directly (host->container UDP forwarding is unreliable on
+  # Docker Desktop, which silently drops the sensor feed).
+  simulator:
+    image: python:3.12-slim
+    container_name: simulator
+    restart: unless-stopped
+    working_dir: /sim
+    volumes:
+      - ./simulation:/sim:ro
+    command: python nmea_generator.py --host api --port 10110 --scenario ${SIM_SCENARIO:-cruising}
     depends_on:
       - api
     networks:

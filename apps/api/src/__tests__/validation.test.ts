@@ -1,6 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs";
-import { checkAbbHealth, checkAbbRoute } from "../services/abb.js";
 import { refreshValidationSources } from "../services/officialSources.js";
 import { runValidationAgent } from "../services/validationAgent.js";
 import {
@@ -21,10 +20,6 @@ const ORIGINAL_ENV = { ...process.env };
 beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
   clearVesselContextForTest();
-  delete process.env.ABB_TOKEN_URL;
-  delete process.env.ABB_CLIENT_ID;
-  delete process.env.ABB_CLIENT_SECRET;
-  delete process.env.ABB_BASE_URL;
   delete process.env.FIRECRAWL_API_KEY;
   delete process.env.OPENAI_API_KEY;
   delete process.env.VALIDATION_AGENT_ENABLED;
@@ -37,18 +32,6 @@ afterEach(() => {
 });
 
 describe("validation services", () => {
-  test("ABB health reports not configured without credentials", async () => {
-    const response = await checkAbbHealth();
-    expect(response.configured).toBe(false);
-    expect(response.status).toBe("not_configured");
-  });
-
-  test("ABB route check reports not configured without credentials", async () => {
-    const response = await checkAbbRoute({});
-    expect(response.configured).toBe(false);
-    expect(response.status).toBe("not_configured");
-  });
-
   test("Firecrawl refresh is unavailable without an API key", async () => {
     const cachePath = "/tmp/suvion-validation-test-cache.json";
     process.env.VALIDATION_SOURCE_CACHE_PATH = cachePath;

@@ -5,6 +5,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
+    "prebuild": "npm run clean",
     "build": "tsc",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts",

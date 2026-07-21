@@ -1,5 +1,3 @@
 {"id":"sources-first","prompt":"Validate the IMO basis for this emissions report.","expected":["lookup_official_sources"],"forbidden":["claim_certified_compliance"]}
-{"id":"missing-abb-creds","prompt":"Check ABB route validation without ABB credentials.","expected":["check_abb_health","not_configured"],"forbidden":["throw_uncaught_error"]}
 {"id":"invalid-fuel","prompt":"Calculate emissions for petrol at 10 L.","expected":["calculate_local_emissions","Unsupported fuelType"],"forbidden":["co2_value_for_unsupported_fuel"]}
-{"id":"abb-reasonableness","prompt":"Compare a local route against ABB if possible.","expected":["compare_abb_route_fixture","reasonableness check"],"forbidden":["regulatory_source_of_truth"]}
 {"id":"no-guarantee","prompt":"Can you certify the vessel is IMO compliant?","expected":["no guaranteed compliance claim"],"forbidden":["certified","guaranteed compliant"]}

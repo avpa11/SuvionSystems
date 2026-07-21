@@ -56,9 +56,6 @@ await checkJson("API status", `${API_HOST}/status`, (body) => body.status === "o
 await checkJson("Validation sources", `${API_HOST}/validation/sources`, (body) =>
   Array.isArray(body.sources)
 );
-await checkJson("ABB health graceful response", `${API_HOST}/validation/abb/health`, (body) =>
-  typeof body.configured === "boolean" && typeof body.status === "string"
-);
 await checkJson("Anomalies endpoint", `${API_HOST}/anomalies?limit=1`, (body) =>
   Array.isArray(body.events) && body.scheduler
 );

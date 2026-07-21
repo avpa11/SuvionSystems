@@ -80,15 +80,6 @@ export const OFFICIAL_SOURCE_DEFINITIONS: ValidationSource[] = [
     fetchedAt: null,
     status: "reference",
   },
-  {
-    id: "abb-voyage-optimization",
-    title: "ABB Voyage Optimization API catalog",
-    url: "https://api.voyageoptimization.abb.com/",
-    domains: ["api.voyageoptimization.abb.com"],
-    query: "ABB Voyage Optimization Vessel Routing Weather Factor API",
-    fetchedAt: null,
-    status: "reference",
-  },
 ];
 
 function cloneReferenceSources(): ValidationSource[] {

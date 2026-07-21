@@ -45,7 +45,7 @@ Expected:
 npm run smoke:runtime
 ```
 
-The smoke command checks MongoDB, API health/status, report generation, validation-source metadata, ABB graceful response, anomalies endpoint, and the web app.
+The smoke command checks MongoDB, API health/status, report generation, validation-source metadata, the anomalies endpoint, and the web app.
 
 ## 5. Stream simulated data
 
@@ -114,22 +114,3 @@ Expected:
 * `status` is `completed` with temperature, wind, humidity, pressure, and visibility.
 * Without the key, `status` is `not_configured` and the dashboard still runs.
 * The dashboard can request weather from vessel GNSS or browser geolocation.
-
-## Optional: ABB
-
-```sh
-ABB_TOKEN_URL=... \
-ABB_CLIENT_ID=... \
-ABB_CLIENT_SECRET=... \
-ABB_OAUTH_SCOPE=... \
-ABB_BASE_URL=https://api.voyageoptimization.abb.com/vessel-routing/v2 \
-npm run dev -w api
-```
-
-Then:
-
-```sh
-curl http://localhost:4001/validation/abb/health
-```
-
-ABB route checks are external reasonableness checks and may return `not_comparable` if route/weather outputs do not align with local sensor-only report totals.

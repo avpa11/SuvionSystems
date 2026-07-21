@@ -6,7 +6,7 @@
 * Fix the rate-vs-volume reporting issue so sampled `L/h` and `kg/h` values are integrated over elapsed time.
 * Wire anomaly detector output into the API/dashboard.
 * Clarify the Signal K setup and document the default simulation path.
-* Add official-source cross-checking hooks for IMO, Signal K, ABB, Firecrawl, and the optional OpenAI Agents SDK validation flow.
+* Add official-source cross-checking hooks for IMO, Signal K, Firecrawl, and the optional OpenAI Agents SDK validation flow.
 
 # Completed Tasks
 
@@ -16,8 +16,7 @@
 * **Dashboard sense-making pass** - the dashboard now opens with vessel, environment, and navigation categories visible; anomaly status appears near the top; report results show validation-source metadata.
 * **Signal K cleanup** - the API uses `SIGNALK_URL` plus `SIGNALK_ENABLED=true`, forces `subscribe=none`, sends explicit subscriptions, and no longer treats `tanks.freshWater.0.currentLevel` as water usage. That path is shown as water tank level instead.
 * **Official-source validation** - added Firecrawl-backed source refresh with official-domain filtering and cached fallback source metadata. Reports include validation-source titles, URLs, statuses, and fetch timestamps where available.
-* **ABB validation** - added credential-gated ABB OAuth health and route-check endpoints. ABB output is treated as a reasonableness check only, not regulatory truth.
-* **OpenAI Agents SDK** - added an optional validation agent using deterministic tools for local emissions calculations, official-source lookup, ABB health/route checks, and validation summaries. It is disabled unless `VALIDATION_AGENT_ENABLED=true` and `OPENAI_API_KEY` are present.
+* **OpenAI Agents SDK** - added an optional validation agent using deterministic tools for local emissions calculations, official-source lookup, and validation summaries. It is disabled unless `VALIDATION_AGENT_ENABLED=true` and `OPENAI_API_KEY` are present.
 * **MCP config** - `.vscode/mcp.json` is now valid JSON and uses environment-backed secrets for Firecrawl and Signal K.
 * **Lint setup** - added missing ESLint configs for API, web, and emissions packages.
 
@@ -31,5 +30,5 @@
 # Follow-Up
 
 * Run a full local smoke test with MongoDB, API, dashboard, and `simulation/nmea_generator.py`.
-* Enable live Firecrawl, ABB, and OpenAI checks only in a credentialed environment.
+* Enable live Firecrawl and OpenAI checks only in a credentialed environment.
 * If Docker/WSL integration is required, confirm Docker is installed in the active environment before relying on the local Signal K container.
