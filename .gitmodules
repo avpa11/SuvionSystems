@@ -1,0 +1,3 @@
+[submodule "apps/signalk-server"]
+	path = apps/signalk-server
+	url = https://github.com/SignalK/signalk-server.git

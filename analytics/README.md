@@ -1,57 +1,64 @@
-# Suvion Systems — Analytics (Anomaly Detection)
+# Anomaly detection
 
-Multivariate anomaly detection over the four persisted sensor streams
-(`fuel`, `generator`, `water`, `temperature`) using an **Isolation Forest**.
+This module experiments with an Isolation Forest over the four persisted streams:
+`fuel`, `generator`, `water`, and `temperature`. It can flag unusual combinations
+of readings alongside the report's separate operational-target checks. It is not
+a validated alarm system, regulatory check, or demonstrated detector for real
+vessel faults.
 
-Faults often appear as an unusual *combination* of readings rather than any
-single value leaving its range (e.g. generator current surging while fuel flow
-stays normal). A forest over the joint feature vector catches those cases that
-per-stream thresholds miss — it complements, rather than replaces, the API's
-hourly non-compliant-period flagging.
-
-## Why no scikit-learn
-
-The Isolation Forest is implemented from scratch in
-[`isolation_forest.py`](isolation_forest.py) using only the Python standard
-library, matching the dependency-free convention of [`../simulation/`](../simulation).
-The public surface (`fit` / `predict` / `score_samples`, `contamination`,
-`random_state`) mirrors `sklearn.ensemble.IsolationForest`, so swapping in
-scikit-learn later is a one-line change.
+The model and synthetic demo use only the Python standard library. `pymongo` is
+needed only for the live database runner. The implementation has familiar method
+names, but its score/prediction conventions are not interchangeable with
+scikit-learn: higher scores are more anomalous, and `predict` returns 1 for an
+anomaly and 0 otherwise.
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `isolation_forest.py` | Dependency-free Isolation Forest (Liu, Ting & Zhou 2008) |
-| `anomaly_detection.py` | Sensor-domain wrapper: feature alignment, scaling, events, MongoDB runner, CLI |
-| `test_anomaly_detection.py` | `unittest` suite (16 tests) |
-| `requirements.txt` | Optional `pymongo` for the live-database runner |
+| File                                                   | Purpose                                                        |
+| ------------------------------------------------------ | -------------------------------------------------------------- |
+| [isolation_forest.py](isolation_forest.py)             | Standard-library Isolation Forest implementation               |
+| [anomaly_detection.py](anomaly_detection.py)           | Alignment, scaling, event generation, database runner, and CLI |
+| [test_anomaly_detection.py](test_anomaly_detection.py) | Behavioral tests                                               |
+| [requirements.txt](requirements.txt)                   | Optional database connector                                    |
 
-## Usage
+## Tests and synthetic demo
 
-Run the test suite (no dependencies required):
+Run from the repository root with Python 3.10+:
 
-```bash
-python -m unittest discover analytics
+```sh
+python3 -m unittest discover analytics
+python3 analytics/anomaly_detection.py --json
 ```
 
-Run a synthetic demo (no database required) — generates cruising-scenario data
-with injected generator-surge faults and flags them:
+The demo generates synthetic rows with injected generator surges. It appends
+flagged events to the ignored `analytics/anomaly-events.log`.
 
-```bash
-python analytics/anomaly_detection.py
+## Native database runner
+
+Use an activated virtual environment so the API scheduler can find the same
+Python dependencies:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r analytics/requirements.txt
+python3 analytics/anomaly_detection.py \
+  --mongo-uri mongodb://127.0.0.1:27017/suvion \
+  --lookback-minutes 1440 --contamination 0.02 --json
 ```
 
-Run against a live MongoDB (requires `pip install -r analytics/requirements.txt`):
+For the API scheduler, enable `ANOMALY_DETECTION_ENABLED=true` in the root `.env`
+and start the API from that activated environment. The API Docker image already
+includes Python and the connector. See [integration configuration](../docs/integrations.md).
 
-```bash
-python analytics/anomaly_detection.py \
-    --mongo-uri mongodb://localhost:27017/suvion \
-    --lookback-minutes 1440 \
-    --contamination 0.02
-```
+The database runner aligns recent readings, fits on that window, and scores the
+same window. This is exploratory analysis, not an independent train/test
+validation. Overlapping scheduled windows can report the same event again.
 
-As a library:
+## Library use
+
+The current module imports its sibling directly, so use the `analytics` directory
+as the working directory for this example. Supply your own aligned `rows`:
 
 ```python
 from anomaly_detection import SensorAnomalyDetector
@@ -61,19 +68,7 @@ for event in detector.anomalies(rows):
     print(event.timestamp, event.score, event.contributing)
 ```
 
-## Output
-
-Each flagged window is appended as one JSON line to `anomaly-events.log`
-(gitignored, same audit-log convention as `reporting-api.log` and
-`data-lifecycle.log`):
-
-```json
-{"event": "anomaly_detected", "timestamp": "2026-06-01T00:02:29Z",
- "score": 0.686, "is_anomaly": true,
- "features": {"fuel": 12.7, "generator": 29.9, "water": 15.1, "temperature": 21.0},
- "contributing": ["generator"]}
-```
-
-`score` is in `[0, 1]`; values approaching 1.0 isolate quickly and are strong
-anomalies. `contributing` lists the streams whose standardised deviation
-(≥ 2σ from the training mean) most explains the flag.
+Events contain a timestamp, score, anomaly flag, feature values, and contributing
+streams. Scores lie in `[0, 1]`; they are not calibrated fault probabilities.
+`contributing` lists streams at least two standard deviations from the training
+mean, not causal explanations. The log is descriptive and has no automatic rotation.

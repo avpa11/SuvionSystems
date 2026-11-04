@@ -6,10 +6,19 @@ export const metadata: Metadata = {
   description: "Maritime vessel sustainability tracking",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <a className="skip-link" href="#main-content">
+          Skip to dashboard
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

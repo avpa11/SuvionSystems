@@ -1,39 +1,42 @@
-# Official Source Validation
+# Source verification
 
-Suvion reports are informational and do not certify regulatory compliance. The validation layer records which official sources informed the calculation and integration checks.
+Suvion stores reference metadata to make calculation assumptions traceable.
+Reports are informational; the cache does not establish regulatory compliance.
+See [calculation references](../references.md) for source links and density assumptions.
 
-## IMO
+## Static references and refresh
 
-Use IMO guidance for the calculation basis:
+`GET /validation/sources` reads the local metadata cache or falls back to the
+built-in source definitions. Report generation does not require a network lookup.
+`POST /validation/sources/refresh` optionally invokes Firecrawl for fixed searches
+covering IMO, EPA, and Signal K references.
 
-* MEPC.352(78), CII G1: operational carbon-intensity indicators and calculation methods.
-* MEPC.308(73), as amended, and MEPC.364(79): fuel-to-CO2 conversion-factor references.
+Returned URLs must use HTTPS and exactly match a hostname allowed for that source.
+For example, `imo.org.attacker.example` does not match `imo.org`. This checks URL
+provenance, not the scientific accuracy, currency, or applicability of a publication.
 
-The app converts volume readings to mass using representative fuel-density assumptions, then applies the IMO mass-basis `Cf` values.
+| Source status | Meaning                                                  |
+| ------------- | -------------------------------------------------------- |
+| `reference`   | Built-in reference, or refresh found no matching result  |
+| `verified`    | Refresh found a result on an allowed HTTPS hostname      |
+| `unavailable` | Refresh was requested without a configured Firecrawl key |
+| `error`       | The provider request failed                              |
 
-## Signal K
+Static URLs remain available when refresh is unavailable or fails. A previously
+written cache can remain visible until another refresh; use `fetchedAt` and
+`refreshedAt` to assess age. The term `verified` does not certify a report or vessel.
 
-Signal K is used as an optional data-normalization source. The API subscribes to explicit own-vessel paths instead of `subscribe=all`.
+## Cache configuration
 
-Important unit handling:
+The default path is `suvion-validation-sources.json` in the operating system's
+temporary directory (`/tmp` in the Linux container). It is not durable reference
+storage. `VALIDATION_SOURCE_CACHE_PATH` can override it in the API environment;
+see [advanced integration configuration](../integrations.md#advanced-native-configuration)
+for container forwarding requirements.
 
-* `environment.outside.temperature` and `environment.water.temperature` are Kelvin and converted to Celsius.
-* `navigation.headingTrue` and related angles are radians and converted to degrees.
-* `navigation.speedOverGround` is m/s and converted to knots.
-* `tanks.freshWater.0.currentLevel` is a tank level ratio, not a water usage rate; the app exposes it as tank level and excludes it from water-usage reports.
+## Unit conventions
 
-## Firecrawl
-
-Firecrawl refreshes source evidence with official-domain filtering. If credentials are unavailable or the network fails, reports keep static source references and continue generation.
-
-Default source cache path:
-
-```text
-/tmp/suvion-validation-sources.json
-```
-
-Override with:
-
-```text
-VALIDATION_SOURCE_CACHE_PATH=/path/to/cache.json
-```
+Signal K supplies SI units. The bridge converts fuel volume rate from m³/s to L/h,
+Kelvin to Celsius, vessel speed to knots, angles to degrees, and tank ratios to
+percentages. A tank level is not a water-use rate. These are code-level mappings,
+covered by parser/unit tests; see [the bridge guide](../signalk-architecture.md).

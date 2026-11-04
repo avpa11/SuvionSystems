@@ -1,77 +1,71 @@
-# Signal K Architecture Notes
+# Signal K bridge
 
-## Current Local State
+Signal K is optional. The default Python simulator sends directly to the API's
+UDP listener at `127.0.0.1:10110`; it does not require a Signal K server.
 
-During inspection on July 8, 2026:
+## Connect a native server
 
-* No local API listener was visible on `4001`.
-* No local NMEA UDP listener was visible on `10110`.
-* No local Signal K listener was visible on `3000` or `3443`.
-* Port `3000` was occupied by a Next server, not Signal K.
+Start and configure your Signal K server separately. Set these values in the root
+`.env`, then restart the API:
 
-So there are multiple configured Signal K possibilities, but not two running Signal K servers in the active WSL environment.
-
-## Intended Modes
-
-### Default Development
-
-```text
-python3 simulation/nmea_generator.py -> UDP 127.0.0.1:10110 -> apps/api
-```
-
-This path does not require Signal K.
-
-### Optional Signal K
-
-Set:
-
-```sh
+```dotenv
 SIGNALK_ENABLED=true
 SIGNALK_URL=ws://localhost:3000/signalk/v1/stream
 ```
 
-The API rewrites the stream URL to `subscribe=none` and sends explicit subscriptions for the paths it understands.
+The API sets `subscribe=none` and sends explicit own-vessel subscriptions. It
+ignores other-vessel contexts. If the upstream connection closes, restart the API;
+automatic bridge reconnection is not implemented.
 
-### Docker
+## Connect the optional Docker service
 
-`docker-compose.yml` starts a `signalk` service and configures the API with:
-
-```sh
-SIGNALK_ENABLED=true
-SIGNALK_URL=ws://signalk:3000/signalk/v1/stream
-```
-
-Docker must be available in the active environment for this path to work.
-
-## Python Simulator
-
-The simulator sends directly to the API by default:
+The profile uses the upstream image and stores its configuration in a separate
+volume. The command overrides a root `.env` URL that might otherwise use localhost:
 
 ```sh
-python3 simulation/nmea_generator.py
+SIGNALK_ENABLED=true SIGNALK_URL=ws://signalk:3000/signalk/v1/stream \
+  docker compose --profile signalk up -d
 ```
 
-It emits XDR sensor sentences plus HDM/HDG, MWV, VTG, VHW, GGA, GLL, and VLW navigation
-sentences. That feed drives dashboard COG, SOG, STW, magnetic variation, GNSS satellites,
-HDOP, altitude, position, total log, and trip log.
+Configure upstream security and data connections through its local admin UI at
+[localhost:3000](http://localhost:3000). Starting the container alone does not
+configure a sensor feed. The default image uses `latest`; set `SIGNALK_IMAGE` to a
+reviewed version or digest when repeatability is required.
 
-It can also mirror NMEA sentences to a Signal K UDP target:
+Use a single fuel source. If the Signal K stream includes the same readings as the
+Docker simulator, stop the direct simulator with `docker compose stop simulator`
+and keep it stopped during that test. Starting the full stack again starts it too.
+
+The optional upstream source checkout is excluded from core npm workspaces. To
+inspect it, run `git submodule update --init apps/signalk-server`. It retains its
+Apache-2.0 license and independent build instructions; core installation needs no
+submodule initialization.
+
+## Units and persistence
+
+| Input                          | Internal interpretation                           |
+| ------------------------------ | ------------------------------------------------- |
+| `propulsion.0.fuel.rate`, m³/s | Fuel flow in L/h, multiplied by 3,600,000         |
+| Outside/water temperature, K   | Celsius                                           |
+| True heading and angles, rad   | Degrees; true heading retains the `°T` reference  |
+| Speed, m/s                     | Knots for vessel speed; apparent wind remains m/s |
+| Freshwater tank level, ratio   | Percentage; excluded from water-usage totals      |
+
+The bridge uses its implemented paths, such as propulsion instance `0` and battery
+instance `1`. Other vessel layouts need mapping changes. Direct simulator headings
+are magnetic (`°M`); true and magnetic headings are labeled on the compass.
+
+Only fuel flow, generator current, water-use rate, and ambient temperature sensor
+streams are persisted, alongside calculated emissions. Navigation, wind, depth,
+battery, and tank-level readings are live-only. See [architecture](architecture.md)
+and [the API guide](api.md).
+
+## Mirror simulator output
 
 ```sh
 python3 simulation/nmea_generator.py --signalk-host localhost --signalk-port 3000
 ```
 
-The mirror path requires Signal K to be configured to accept that UDP input.
-
-## Data Semantics
-
-Persisted report streams:
-
-* `fuel`: fuel flow rate, `L/h`
-* `water`: water usage rate, `L/h`
-* `generator`: current, `A`
-* `temperature`: ambient temperature, `C`
-
-Broadcast-only streams include navigation, wind, battery, depth, and Signal K tank level.
-
-`tanks.freshWater.0.currentLevel` is not water usage. It is rendered as `waterLevel` and excluded from water usage totals.
+The upstream server must have a UDP input configured on that port. This command
+also sends directly to the API by default; avoid ingesting both paths into Suvion
+at the same time.

@@ -1,6 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import * as AjvModule from "ajv";
-import type { Ajv as AjvInstance, Options as AjvOptions, Plugin as AjvPlugin } from "ajv";
+import type {
+  Ajv as AjvInstance,
+  Options as AjvOptions,
+  Plugin as AjvPlugin,
+} from "ajv";
 import _addFormats from "ajv-formats";
 import PDFDocument from "pdfkit";
 
@@ -37,11 +41,15 @@ const EPA_DIESEL_CO2_KG_PER_GALLON = 10.18;
 const IMO_TOTAL_SHIPPING_GHG_SHARE_2018_PCT = 2.89;
 
 const SIMILAR_VESSEL_BENCHMARKS = {
-  label: process.env.REPORT_SIMILAR_VESSEL_LABEL ?? "Comparable 12-18 m diesel workboat target",
+  label:
+    process.env.REPORT_SIMILAR_VESSEL_LABEL ??
+    "Illustrative demo targets (not an industry dataset)",
   fuelRateLh: Number(process.env.REPORT_SIMILAR_VESSEL_FUEL_RATE_LH ?? 12),
   co2RateKgh: Number(process.env.REPORT_SIMILAR_VESSEL_CO2_RATE_KGH ?? 32),
   waterRateLh: Number(process.env.REPORT_SIMILAR_VESSEL_WATER_RATE_LH ?? 10),
-  generatorCurrentA: Number(process.env.REPORT_SIMILAR_VESSEL_GENERATOR_CURRENT_A ?? 8),
+  generatorCurrentA: Number(
+    process.env.REPORT_SIMILAR_VESSEL_GENERATOR_CURRENT_A ?? 8,
+  ),
 };
 
 type AjvConstructor = new (opts?: AjvOptions) => AjvInstance;
@@ -70,6 +78,7 @@ type EmissionsDoc = {
   consumptionL?: number;
   co2Kg?: number;
   timestamp: Date;
+  fuelType?: string;
 };
 
 type Severity = "compliant" | "watch" | "warning";
@@ -126,18 +135,36 @@ function appendReportLog(entry: Record<string, unknown>): void {
   fs.appendFileSync(LOG_PATH, line, "utf8");
 }
 
-async function sensorSamples(stream: string, start: Date, end: Date): Promise<RateSample[]> {
+async function sensorSamples(
+  stream: string,
+  start: Date,
+  end: Date,
+  maxSampleAgeMs: number,
+): Promise<RateSample[]> {
   const docs = await SensorReading.find(
-    { stream, timestamp: { $gte: start, $lte: end } },
-    { _id: 0, value: 1, timestamp: 1 }
+    {
+      stream,
+      timestamp: {
+        $gte: new Date(start.getTime() - maxSampleAgeMs),
+        $lte: end,
+      },
+    },
+    { _id: 0, value: 1, timestamp: 1 },
   )
     .sort({ timestamp: 1 })
     .lean<SensorDoc[]>();
 
-  return docs.map((doc) => ({ value: doc.value, timestamp: new Date(doc.timestamp) }));
+  return docs.map((doc) => ({
+    value: doc.value,
+    timestamp: new Date(doc.timestamp),
+  }));
 }
 
-async function averageSensorValue(stream: string, start: Date, end: Date): Promise<number> {
+async function averageSensorValue(
+  stream: string,
+  start: Date,
+  end: Date,
+): Promise<number> {
   const result = await SensorReading.aggregate<{ avg: number }>([
     { $match: { stream, timestamp: { $gte: start, $lte: end } } },
     { $group: { _id: null, avg: { $avg: "$value" } } },
@@ -146,25 +173,43 @@ async function averageSensorValue(stream: string, start: Date, end: Date): Promi
   return result[0]?.avg ?? 0;
 }
 
-async function emissionsSamples(start: Date, end: Date): Promise<{
+async function emissionsSamples(
+  start: Date,
+  end: Date,
+  maxSampleAgeMs: number,
+): Promise<{
   fuelSamples: RateSample[];
   co2Samples: RateSample[];
+  fuelTypesObserved: string[];
 }> {
   const docs = await EmissionsReading.find(
-    { timestamp: { $gte: start, $lte: end } },
+    {
+      timestamp: {
+        $gte: new Date(start.getTime() - maxSampleAgeMs),
+        $lte: end,
+      },
+    },
     {
       _id: 0,
+      fuelType: 1,
       fuelRateLh: 1,
       co2RateKgh: 1,
       consumptionL: 1,
       co2Kg: 1,
       timestamp: 1,
-    }
+    },
   )
     .sort({ timestamp: 1 })
     .lean<EmissionsDoc[]>();
 
   return {
+    fuelTypesObserved: [
+      ...new Set(
+        docs
+          .map((doc) => doc.fuelType)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ],
     fuelSamples: docs.map((doc) => ({
       value: doc.fuelRateLh ?? doc.consumptionL ?? 0,
       timestamp: new Date(doc.timestamp),
@@ -183,14 +228,15 @@ function round(value: number, decimals = 2): number {
 }
 
 function ratio(value: number, benchmark: number): number {
-  if (!Number.isFinite(value) || !Number.isFinite(benchmark) || benchmark <= 0) return 0;
+  if (!Number.isFinite(value) || !Number.isFinite(benchmark) || benchmark <= 0)
+    return 0;
   return value / benchmark;
 }
 
 function thresholdStatus(
   value: number,
   benchmark: number,
-  options: { watchRatio?: number; warningRatio?: number } = {}
+  options: { watchRatio?: number; warningRatio?: number } = {},
 ): Severity {
   const valueRatio = ratio(value, benchmark);
   const watchRatio = options.watchRatio ?? 0.85;
@@ -245,7 +291,7 @@ function averageRate(total: number, observedSeconds: number): number {
 
 function sourceById(
   sources: ValidationSourceSummary[],
-  id: string
+  id: string,
 ): ValidationSourceSummary | undefined {
   return sources.find((source) => source.id === id);
 }
@@ -281,9 +327,10 @@ function buildImpactFact(input: {
 
 function buildCo2ImpactFacts(
   totalCo2Kg: number,
-  sources: ValidationSourceSummary[]
+  sources: ValidationSourceSummary[],
 ): Co2ImpactFact[] {
-  const passengerVehicleYears = totalCo2Kg / EPA_PASSENGER_VEHICLE_CO2_KG_PER_YEAR;
+  const passengerVehicleYears =
+    totalCo2Kg / EPA_PASSENGER_VEHICLE_CO2_KG_PER_YEAR;
   const gasolineGallons = totalCo2Kg / EPA_GASOLINE_CO2_KG_PER_GALLON;
   const dieselGallons = totalCo2Kg / EPA_DIESEL_CO2_KG_PER_GALLON;
 
@@ -293,10 +340,15 @@ function buildCo2ImpactFacts(
       label: "Passenger vehicle-years",
       value: passengerVehicleYears,
       unit: "vehicle-years",
-      status: passengerVehicleYears >= 0.1 ? "warning" : passengerVehicleYears > 0 ? "watch" : "compliant",
+      status:
+        passengerVehicleYears >= 0.1
+          ? "warning"
+          : passengerVehicleYears > 0
+            ? "watch"
+            : "compliant",
       summary: `${round(totalCo2Kg, 1)} kg CO2 is about ${round(
         passengerVehicleYears,
-        2
+        2,
       )} years of tailpipe CO2 from a typical passenger vehicle.`,
       method: "Report CO2 kg / 4,600 kg CO2 per passenger vehicle-year.",
       sourceId: "epa-passenger-vehicle-co2",
@@ -307,10 +359,15 @@ function buildCo2ImpactFacts(
       label: "Gasoline CO2 equivalent",
       value: gasolineGallons,
       unit: "gal",
-      status: gasolineGallons >= 50 ? "warning" : gasolineGallons > 0 ? "watch" : "compliant",
+      status:
+        gasolineGallons >= 50
+          ? "warning"
+          : gasolineGallons > 0
+            ? "watch"
+            : "compliant",
       summary: `The same CO2 mass is comparable to burning ${round(
         gasolineGallons,
-        1
+        1,
       )} gallons of gasoline.`,
       method: "Report CO2 kg / 8.887 kg CO2 per gallon gasoline.",
       sourceId: "epa-ghg-equivalencies",
@@ -321,10 +378,15 @@ function buildCo2ImpactFacts(
       label: "Road-diesel CO2 equivalent",
       value: dieselGallons,
       unit: "gal",
-      status: dieselGallons >= 45 ? "warning" : dieselGallons > 0 ? "watch" : "compliant",
+      status:
+        dieselGallons >= 45
+          ? "warning"
+          : dieselGallons > 0
+            ? "watch"
+            : "compliant",
       summary: `For road-diesel context, this is comparable to burning ${round(
         dieselGallons,
-        1
+        1,
       )} gallons of diesel.`,
       method: "Report CO2 kg / 10.180 kg CO2 per gallon diesel.",
       sourceId: "epa-ghg-equivalencies",
@@ -365,8 +427,8 @@ function buildComparisons(input: {
       benchmark: NON_COMPLIANT_FUEL_RATE_LH,
       benchmarkLabel: "Operational threshold",
       status: thresholdStatus(input.avgFuelRateLh, NON_COMPLIANT_FUEL_RATE_LH),
-      detail: "Compares observed fuel burn against the configured hourly non-compliance threshold.",
-      sourceId: "imo-cii-g1",
+      detail:
+        "Compares observed fuel burn against the demo operational threshold (not a regulatory limit).",
     }),
     buildComparisonMetric({
       id: "co2-rate-threshold",
@@ -377,8 +439,8 @@ function buildComparisons(input: {
       benchmark: NON_COMPLIANT_CO2_RATE_KGH,
       benchmarkLabel: "Operational threshold",
       status: thresholdStatus(input.avgCo2RateKgh, NON_COMPLIANT_CO2_RATE_KGH),
-      detail: "Compares observed CO2 rate against the configured hourly non-compliance threshold.",
-      sourceId: "imo-cii-g1",
+      detail:
+        "Compares observed CO2 rate against the demo operational threshold (not a regulatory limit).",
     }),
     buildComparisonMetric({
       id: "fuel-factor-alignment",
@@ -389,7 +451,8 @@ function buildComparisons(input: {
       benchmark: fuelFactorBenchmark,
       benchmarkLabel: `${input.fuelType} fuel factor`,
       status: deviationStatus(input.intensityKgPerL, fuelFactorBenchmark),
-      detail: "Checks measured carbon intensity against the selected fuel conversion factor.",
+      detail:
+        "Checks measured carbon intensity against the selected fuel conversion factor.",
       sourceId: "imo-eedi-cf",
     }),
     buildComparisonMetric({
@@ -400,11 +463,16 @@ function buildComparisons(input: {
       unit: "L/h",
       benchmark: SIMILAR_VESSEL_BENCHMARKS.fuelRateLh,
       benchmarkLabel: SIMILAR_VESSEL_BENCHMARKS.label,
-      status: thresholdStatus(input.avgFuelRateLh, SIMILAR_VESSEL_BENCHMARKS.fuelRateLh, {
-        watchRatio: 1,
-        warningRatio: 1.15,
-      }),
-      detail: "Compares average fuel burn with the configured comparable-vessel operating target.",
+      status: thresholdStatus(
+        input.avgFuelRateLh,
+        SIMILAR_VESSEL_BENCHMARKS.fuelRateLh,
+        {
+          watchRatio: 1,
+          warningRatio: 1.15,
+        },
+      ),
+      detail:
+        "Compares average fuel burn with the configured comparable-vessel operating target.",
     }),
     buildComparisonMetric({
       id: "similar-vessel-co2",
@@ -414,11 +482,16 @@ function buildComparisons(input: {
       unit: "kg/h",
       benchmark: SIMILAR_VESSEL_BENCHMARKS.co2RateKgh,
       benchmarkLabel: SIMILAR_VESSEL_BENCHMARKS.label,
-      status: thresholdStatus(input.avgCo2RateKgh, SIMILAR_VESSEL_BENCHMARKS.co2RateKgh, {
-        watchRatio: 1,
-        warningRatio: 1.15,
-      }),
-      detail: "Compares average CO2 rate with the configured comparable-vessel operating target.",
+      status: thresholdStatus(
+        input.avgCo2RateKgh,
+        SIMILAR_VESSEL_BENCHMARKS.co2RateKgh,
+        {
+          watchRatio: 1,
+          warningRatio: 1.15,
+        },
+      ),
+      detail:
+        "Compares average CO2 rate with the configured comparable-vessel operating target.",
     }),
     buildComparisonMetric({
       id: "similar-vessel-water",
@@ -428,11 +501,16 @@ function buildComparisons(input: {
       unit: "L/h",
       benchmark: SIMILAR_VESSEL_BENCHMARKS.waterRateLh,
       benchmarkLabel: SIMILAR_VESSEL_BENCHMARKS.label,
-      status: thresholdStatus(input.avgWaterRateLh, SIMILAR_VESSEL_BENCHMARKS.waterRateLh, {
-        watchRatio: 1,
-        warningRatio: 1.25,
-      }),
-      detail: "Compares water usage against the configured comparable-vessel target.",
+      status: thresholdStatus(
+        input.avgWaterRateLh,
+        SIMILAR_VESSEL_BENCHMARKS.waterRateLh,
+        {
+          watchRatio: 1,
+          warningRatio: 1.25,
+        },
+      ),
+      detail:
+        "Compares water usage against the configured comparable-vessel target.",
     }),
     buildComparisonMetric({
       id: "similar-vessel-generator",
@@ -442,18 +520,23 @@ function buildComparisons(input: {
       unit: "A",
       benchmark: SIMILAR_VESSEL_BENCHMARKS.generatorCurrentA,
       benchmarkLabel: SIMILAR_VESSEL_BENCHMARKS.label,
-      status: thresholdStatus(input.avgGenA, SIMILAR_VESSEL_BENCHMARKS.generatorCurrentA, {
-        watchRatio: 1,
-        warningRatio: 1.2,
-      }),
-      detail: "Compares average generator current with the configured comparable-vessel target.",
+      status: thresholdStatus(
+        input.avgGenA,
+        SIMILAR_VESSEL_BENCHMARKS.generatorCurrentA,
+        {
+          watchRatio: 1,
+          warningRatio: 1.2,
+        },
+      ),
+      detail:
+        "Compares average generator current with the configured comparable-vessel target.",
     }),
   ];
 }
 
 function buildHourlySeries(
   hourlyFuel: IntegratedBucket[],
-  hourlyCo2: IntegratedBucket[]
+  hourlyCo2: IntegratedBucket[],
 ): Array<{
   start: string;
   end: string;
@@ -462,12 +545,20 @@ function buildHourlySeries(
   co2RateKgh: number;
   status: Severity;
 }> {
-  const co2ByHour = new Map(hourlyCo2.map((row) => [row.start.toISOString(), row]));
+  const co2ByHour = new Map(
+    hourlyCo2.map((row) => [row.start.toISOString(), row]),
+  );
 
   return hourlyFuel.map((fuelRow) => {
     const co2Row = co2ByHour.get(fuelRow.start.toISOString());
-    const fuelStatus = thresholdStatus(fuelRow.averageRate, NON_COMPLIANT_FUEL_RATE_LH);
-    const co2Status = thresholdStatus(co2Row?.averageRate ?? 0, NON_COMPLIANT_CO2_RATE_KGH);
+    const fuelStatus = thresholdStatus(
+      fuelRow.averageRate,
+      NON_COMPLIANT_FUEL_RATE_LH,
+    );
+    const co2Status = thresholdStatus(
+      co2Row?.averageRate ?? 0,
+      NON_COMPLIANT_CO2_RATE_KGH,
+    );
 
     return {
       start: fuelRow.start.toISOString(),
@@ -487,7 +578,9 @@ function buildInsights(input: {
   avgCo2RateKgh: number;
   co2ImpactFacts: Co2ImpactFact[];
 }): ReportInsight[] {
-  const topImpact = input.co2ImpactFacts.find((fact) => fact.id === "passenger-vehicle-years");
+  const topImpact = input.co2ImpactFacts.find(
+    (fact) => fact.id === "passenger-vehicle-years",
+  );
 
   return [
     {
@@ -523,16 +616,21 @@ function buildInsights(input: {
       status: thresholdStatus(input.avgCo2RateKgh, NON_COMPLIANT_CO2_RATE_KGH),
       message: `Average fuel burn was ${round(input.avgFuelRateLh, 2)} L/h and average CO2 rate was ${round(
         input.avgCo2RateKgh,
-        2
+        2,
       )} kg/h over observed samples.`,
       sourceId: "imo-eedi-cf",
     },
   ];
 }
 
-function detectNonCompliantPeriods(hourlyFuel: IntegratedBucket[], hourlyCo2: IntegratedBucket[]): NonCompliantPeriod[] {
+function detectNonCompliantPeriods(
+  hourlyFuel: IntegratedBucket[],
+  hourlyCo2: IntegratedBucket[],
+): NonCompliantPeriod[] {
   const periods: NonCompliantPeriod[] = [];
-  const co2ByHour = new Map(hourlyCo2.map((row) => [row.start.toISOString(), row]));
+  const co2ByHour = new Map(
+    hourlyCo2.map((row) => [row.start.toISOString(), row]),
+  );
 
   for (const fuelRow of hourlyFuel) {
     const co2Row = co2ByHour.get(fuelRow.start.toISOString());
@@ -566,38 +664,80 @@ function detectNonCompliantPeriods(hourlyFuel: IntegratedBucket[], hourlyCo2: In
 async function buildReport(
   startDate: Date,
   endDate: Date,
-  fuelType: FuelType = "diesel"
+  fuelType: FuelType = "diesel",
 ): Promise<Record<string, unknown>> {
-  const [fuelSamples, waterSamples, avgGenA, avgTempC, emissions] = await Promise.all([
-    sensorSamples("fuel", startDate, endDate),
-    sensorSamples("water", startDate, endDate),
-    averageSensorValue("generator", startDate, endDate),
-    averageSensorValue("temperature", startDate, endDate),
-    emissionsSamples(startDate, endDate),
-  ]);
+  const configuredAge = Number(
+    process.env.REPORT_MAX_SAMPLE_AGE_SECONDS ?? 300,
+  );
+  const maxSampleAgeMs =
+    (Number.isFinite(configuredAge) && configuredAge > 0
+      ? configuredAge
+      : 300) * 1000;
+  const [fuelSamples, waterSamples, avgGenA, avgTempC, emissions] =
+    await Promise.all([
+      sensorSamples("fuel", startDate, endDate, maxSampleAgeMs),
+      sensorSamples("water", startDate, endDate, maxSampleAgeMs),
+      averageSensorValue("generator", startDate, endDate),
+      averageSensorValue("temperature", startDate, endDate),
+      emissionsSamples(startDate, endDate, maxSampleAgeMs),
+    ]);
 
-  const fuelIntegration = integrateRateSamples(fuelSamples, startDate, endDate);
-  const waterIntegration = integrateRateSamples(waterSamples, startDate, endDate);
-  const co2Integration = integrateRateSamples(emissions.co2Samples, startDate, endDate);
-  const hourlyFuel = integrateRateSamplesByHour(fuelSamples, startDate, endDate);
-  const hourlyCo2 = integrateRateSamplesByHour(emissions.co2Samples, startDate, endDate);
+  const fuelIntegration = integrateRateSamples(
+    fuelSamples,
+    startDate,
+    endDate,
+    maxSampleAgeMs,
+  );
+  const waterIntegration = integrateRateSamples(
+    waterSamples,
+    startDate,
+    endDate,
+    maxSampleAgeMs,
+  );
+  const co2Integration = integrateRateSamples(
+    emissions.co2Samples,
+    startDate,
+    endDate,
+    maxSampleAgeMs,
+  );
+  const hourlyFuel = integrateRateSamplesByHour(
+    fuelSamples,
+    startDate,
+    endDate,
+    maxSampleAgeMs,
+  );
+  const hourlyCo2 = integrateRateSamplesByHour(
+    emissions.co2Samples,
+    startDate,
+    endDate,
+    maxSampleAgeMs,
+  );
 
   const totalFuelL = fuelIntegration.total;
   const totalWaterL = waterIntegration.total;
   const totalCo2Kg = co2Integration.total;
-  const avgFuelRateLh = averageRate(totalFuelL, fuelIntegration.observedSeconds);
-  const avgWaterRateLh = averageRate(totalWaterL, waterIntegration.observedSeconds);
+  const avgFuelRateLh = averageRate(
+    totalFuelL,
+    fuelIntegration.observedSeconds,
+  );
+  const avgWaterRateLh = averageRate(
+    totalWaterL,
+    waterIntegration.observedSeconds,
+  );
   const avgCo2RateKgh = averageRate(totalCo2Kg, co2Integration.observedSeconds);
-  const intensityKgPerL = totalFuelL > 0 ? totalCo2Kg / totalFuelL : carbonIntensity(fuelType);
+  const intensityKgPerL =
+    totalFuelL > 0 ? totalCo2Kg / totalFuelL : carbonIntensity(fuelType);
   const nonCompliantPeriods = detectNonCompliantPeriods(hourlyFuel, hourlyCo2);
-  const validationSources = getValidationSources().sources.map(({ id, title, url, fetchedAt, status, snippet }) => ({
-    id,
-    title,
-    url,
-    fetchedAt,
-    status,
-    ...(snippet ? { snippet } : {}),
-  }));
+  const validationSources = getValidationSources().sources.map(
+    ({ id, title, url, fetchedAt, status, snippet }) => ({
+      id,
+      title,
+      url,
+      fetchedAt,
+      status,
+      ...(snippet ? { snippet } : {}),
+    }),
+  );
   const industryComparisons = buildComparisons({
     avgFuelRateLh,
     avgCo2RateKgh,
@@ -607,7 +747,11 @@ async function buildReport(
     fuelType,
   });
   const hourlySeries = buildHourlySeries(hourlyFuel, hourlyCo2);
+  const coverageRatio =
+    Math.min(fuelIntegration.observedSeconds, co2Integration.observedSeconds) /
+    ((endDate.getTime() - startDate.getTime()) / 1000);
   const summaryStatus = worstStatus([
+    coverageRatio < 0.95 ? "watch" : "compliant",
     nonCompliantPeriods.length > 0 ? "warning" : "compliant",
     ...industryComparisons.map((comparison) => comparison.status),
   ]);
@@ -627,6 +771,21 @@ async function buildReport(
     generatedAt: new Date().toISOString(),
     summaryStatus,
     fuelType,
+    fuelTypesObserved: emissions.fuelTypesObserved,
+    dataCoverage: {
+      fuelObservedSeconds: fuelIntegration.observedSeconds,
+      co2ObservedSeconds: co2Integration.observedSeconds,
+      waterObservedSeconds: waterIntegration.observedSeconds,
+      requestedSeconds: (endDate.getTime() - startDate.getTime()) / 1000,
+      maxSampleAgeSeconds: maxSampleAgeMs / 1000,
+      status:
+        fuelIntegration.observedSeconds === 0 &&
+        co2Integration.observedSeconds === 0
+          ? "no_data"
+          : coverageRatio < 0.95
+            ? "partial"
+            : "complete",
+    },
     fuelConsumedL: Math.round(totalFuelL * 100) / 100,
     co2EmittedKg: Math.round(totalCo2Kg * 100) / 100,
     waterUsageL: Math.round(totalWaterL * 100) / 100,
@@ -651,8 +810,10 @@ async function buildReport(
     },
     calculationBasis: {
       fuel: "Fuel and water readings are rates in L/h integrated over observed sample intervals.",
-      emissions: "CO2 readings are kg/h integrated over observed sample intervals.",
-      compliance: "Non-compliant periods compare hourly average rates against configured thresholds.",
+      emissions:
+        "Stored CO2 rates in kg/h are integrated over observed intervals, capped at maxSampleAgeSeconds per sample; gaps are excluded.",
+      compliance:
+        "Threshold periods compare hourly rates against demo operational targets, not regulatory limits. fuelType selects a factor comparison; CO2 totals retain the fuel types recorded at ingestion.",
       observedSeconds: {
         fuel: Math.round(fuelIntegration.observedSeconds),
         water: Math.round(waterIntegration.observedSeconds),
@@ -681,7 +842,7 @@ function reportToCSV(report: Record<string, unknown>): string {
     ["Report Period Start", String(report.reportPeriodStart)],
     ["Report Period End", String(report.reportPeriodEnd)],
     ["Generated At", String(report.generatedAt)],
-    ["Overall Status", String(report.summaryStatus)],
+    ["Operational Target Status", String(report.summaryStatus)],
     ["Fuel Type", String(report.fuelType)],
     ["Fuel Consumed (L)", String(report.fuelConsumedL)],
     ["CO2 Emitted (kg)", String(report.co2EmittedKg)],
@@ -689,42 +850,68 @@ function reportToCSV(report: Record<string, unknown>): string {
     ["Generator Current Avg (A)", String(report.generatorCurrentAvgA)],
     ["Avg Temperature (C)", String(report.avgTemperatureC)],
     ["Carbon Intensity (kg CO2/L)", String(report.carbonIntensityKgPerL)],
+    ["Data Coverage", JSON.stringify(report.dataCoverage)],
+    ["Fuel Types Observed", JSON.stringify(report.fuelTypesObserved)],
     ["Calculation Basis", JSON.stringify(report.calculationBasis)],
     ["Validation Sources", JSON.stringify(report.validationSources)],
-    ["Non-Compliant Periods", String(periods.length)],
+    ["Threshold Exceedances", String(periods.length)],
   ];
 
   insights.forEach((insight, i) => {
-    rows.push([`Insight #${i + 1}`, `${insight.status}: ${insight.title} - ${insight.message}`]);
+    rows.push([
+      `Insight #${i + 1}`,
+      `${insight.status}: ${insight.title} - ${insight.message}`,
+    ]);
   });
 
   comparisons.forEach((comparison, i) => {
     rows.push([`Comparison #${i + 1}`, comparison.label]);
     rows.push([`  Comparison #${i + 1} Status`, comparison.status]);
-    rows.push([`  Comparison #${i + 1} Value`, `${comparison.value} ${comparison.unit}`]);
+    rows.push([
+      `  Comparison #${i + 1} Value`,
+      `${comparison.value} ${comparison.unit}`,
+    ]);
     rows.push([
       `  Comparison #${i + 1} Benchmark`,
       `${comparison.benchmark} ${comparison.unit} (${comparison.benchmarkLabel})`,
     ]);
-    rows.push([`  Comparison #${i + 1} Delta (%)`, String(comparison.deltaPct)]);
+    rows.push([
+      `  Comparison #${i + 1} Delta (%)`,
+      String(comparison.deltaPct),
+    ]);
   });
 
   impactFacts.forEach((fact, i) => {
     rows.push([`CO2 Impact #${i + 1}`, fact.label]);
     rows.push([`  CO2 Impact #${i + 1} Value`, `${fact.value} ${fact.unit}`]);
     rows.push([`  CO2 Impact #${i + 1} Summary`, fact.summary]);
-    rows.push([`  CO2 Impact #${i + 1} Source`, `${fact.sourceTitle}: ${fact.sourceUrl}`]);
+    rows.push([
+      `  CO2 Impact #${i + 1} Source`,
+      `${fact.sourceTitle}: ${fact.sourceUrl}`,
+    ]);
   });
 
   periods.forEach((p, i) => {
-    rows.push([`  Non-Compliant #${i + 1} Start`, p.start]);
-    rows.push([`  Non-Compliant #${i + 1} End`, p.end]);
-    rows.push([`  Non-Compliant #${i + 1} Reason`, p.reason]);
-    rows.push([`  Non-Compliant #${i + 1} Value`, String(p.value)]);
-    rows.push([`  Non-Compliant #${i + 1} Threshold`, String(p.threshold)]);
+    rows.push([`  Threshold Exceedance #${i + 1} Start`, p.start]);
+    rows.push([`  Threshold Exceedance #${i + 1} End`, p.end]);
+    rows.push([`  Threshold Exceedance #${i + 1} Reason`, p.reason]);
+    rows.push([`  Threshold Exceedance #${i + 1} Value`, String(p.value)]);
+    rows.push([
+      `  Threshold Exceedance #${i + 1} Threshold`,
+      String(p.threshold),
+    ]);
   });
 
-  return rows.map((r) => r.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
+  return rows
+    .map((r) =>
+      r
+        .map(
+          (cell) =>
+            `"${(/^[=+@\-\t\r\n]/.test(cell) ? "'" + cell : cell).replace(/"/g, '""')}"`,
+        )
+        .join(","),
+    )
+    .join("\n");
 }
 
 function reportToPDF(report: Record<string, unknown>): PDFKit.PDFDocument {
@@ -735,19 +922,28 @@ function reportToPDF(report: Record<string, unknown>): PDFKit.PDFDocument {
   const insights = (report.reportInsights ?? []) as ReportInsight[];
 
   // Header
-  doc.fontSize(20).font("Helvetica-Bold").text("Suvion Systems", { align: "center" });
-  doc.fontSize(14).font("Helvetica").text("Vessel Sustainability Report", { align: "center" });
+  doc
+    .fontSize(20)
+    .font("Helvetica-Bold")
+    .text("Suvion Systems", { align: "center" });
+  doc
+    .fontSize(14)
+    .font("Helvetica")
+    .text("Vessel Sustainability Report", { align: "center" });
   doc.moveDown();
 
   doc.fontSize(11).font("Helvetica-Bold").text("Calculation Basis");
   doc.font("Helvetica").fontSize(9);
-  doc.text("Fuel, water, and CO2 totals are integrated from rate readings over observed sample intervals.");
+  doc.text(
+    "Fuel, water, and CO2 totals are integrated from rate readings over observed sample intervals.",
+  );
   doc.text("Hourly non-compliance uses hourly average fuel and CO2 rates.");
   doc.moveDown();
 
   doc.fontSize(11).font("Helvetica-Bold").text("Validation Sources");
   doc.font("Helvetica").fontSize(8);
-  const validationSources = report.validationSources as { title: string; url: string }[] | undefined;
+  const validationSources = report.validationSources as
+    { title: string; url: string }[] | undefined;
   (validationSources ?? []).forEach((source) => {
     doc.text(`${source.title}: ${source.url}`);
   });
@@ -759,13 +955,17 @@ function reportToPDF(report: Record<string, unknown>): PDFKit.PDFDocument {
   doc.text(`Vessel ID: ${report.vesselId}`);
   doc.text(`Period: ${report.reportPeriodStart} — ${report.reportPeriodEnd}`);
   doc.text(`Generated: ${report.generatedAt}`);
-  doc.text(`Overall status: ${String(report.summaryStatus).toUpperCase()}`);
+  doc.text(
+    `Operational target status: ${String(report.summaryStatus).toUpperCase()}`,
+  );
   doc.moveDown();
 
   doc.fontSize(11).font("Helvetica-Bold").text("Key Insights");
   doc.font("Helvetica").fontSize(9);
   insights.forEach((insight) => {
-    doc.text(`${insight.status.toUpperCase()} - ${insight.title}: ${insight.message}`);
+    doc.text(
+      `${insight.status.toUpperCase()} - ${insight.title}: ${insight.message}`,
+    );
   });
   doc.moveDown();
 
@@ -789,11 +989,14 @@ function reportToPDF(report: Record<string, unknown>): PDFKit.PDFDocument {
 
   doc.moveDown();
 
-  doc.fontSize(11).font("Helvetica-Bold").text("Industry and Similar-Vessel Comparisons");
+  doc
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .text("Demo Targets and Reference Factors");
   doc.font("Helvetica").fontSize(8.5);
   comparisons.forEach((comparison) => {
     doc.text(
-      `${comparison.status.toUpperCase()} - ${comparison.label}: ${comparison.value} ${comparison.unit} vs ${comparison.benchmark} ${comparison.unit} (${comparison.benchmarkLabel}); delta ${comparison.deltaPct}%`
+      `${comparison.status.toUpperCase()} - ${comparison.label}: ${comparison.value} ${comparison.unit} vs ${comparison.benchmark} ${comparison.unit} (${comparison.benchmarkLabel}); delta ${comparison.deltaPct}%`,
     );
   });
   doc.moveDown();
@@ -806,27 +1009,41 @@ function reportToPDF(report: Record<string, unknown>): PDFKit.PDFDocument {
   });
   doc.moveDown();
 
+  doc.fontSize(11).font("Helvetica-Bold").text("Observation Coverage");
+  doc.font("Helvetica").fontSize(9).text(JSON.stringify(report.dataCoverage));
+  doc.text(
+    "Missing observations do not establish zero use. Targets are illustrative, not regulatory limits.",
+  );
+  doc.moveDown();
+
   // Non-compliant periods
-  doc.fontSize(11).font("Helvetica-Bold").text("Non-Compliant Periods");
+  doc.fontSize(11).font("Helvetica-Bold").text("Threshold Exceedances");
   doc.font("Helvetica").fontSize(10);
 
   if (periods.length === 0) {
-    doc.text("No non-compliant periods detected.");
+    doc.text(
+      "No hourly demo-target exceedances detected; review observation coverage.",
+    );
   } else {
     periods.forEach((p, i) => {
       doc.moveDown(0.3);
       doc.font("Helvetica-Bold").text(`Period ${i + 1}:`);
       doc.font("Helvetica");
       doc.text(`  ${p.start} — ${p.end}`);
-      doc.text(`  Reason: ${p.reason}  |  Value: ${p.value.toFixed(2)}  |  Threshold: ${p.threshold}`);
+      doc.text(
+        `  Reason: ${p.reason}  |  Value: ${p.value.toFixed(2)}  |  Threshold: ${p.threshold}`,
+      );
     });
   }
 
   doc.moveDown();
-  doc.fontSize(8).fillColor("grey").text(
-    "Generated by Suvion Systems. This report is for informational purposes only and does not constitute a regulatory compliance certification.",
-    { align: "center" }
-  );
+  doc
+    .fontSize(8)
+    .fillColor("grey")
+    .text(
+      "Generated by Suvion Systems. This report is for informational purposes only and does not constitute a regulatory compliance certification.",
+      { align: "center" },
+    );
 
   doc.end();
   return doc;
@@ -837,21 +1054,55 @@ function reportToPDF(report: Record<string, unknown>): PDFKit.PDFDocument {
 router.get("/", async (req: Request, res: Response) => {
   const receiptTime = Date.now();
 
-  const { startDate, endDate, format, fuelType } = req.query as Record<string, string>;
-
-  if (!startDate || !endDate) {
-    return res.status(400).json({ error: "startDate and endDate are required (ISO 8601 UTC)" });
+  const { startDate, endDate, format, fuelType } = req.query;
+  if (
+    (startDate !== undefined && typeof startDate !== "string") ||
+    (endDate !== undefined && typeof endDate !== "string") ||
+    (format !== undefined && typeof format !== "string") ||
+    (fuelType !== undefined && typeof fuelType !== "string")
+  ) {
+    return res
+      .status(400)
+      .json({ error: "Report parameters must be single strings" });
+  }
+  if (format !== undefined && !["json", "csv", "pdf"].includes(format)) {
+    return res.status(400).json({ error: "format must be json, csv, or pdf" });
   }
 
+  if (!startDate || !endDate) {
+    return res
+      .status(400)
+      .json({ error: "startDate and endDate are required (ISO 8601 UTC)" });
+  }
+
+  if (
+    ![startDate, endDate].every((value) =>
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+        value,
+      ),
+    )
+  ) {
+    return res
+      .status(400)
+      .json({ error: "Use ISO 8601 timestamps with an explicit timezone" });
+  }
   const start = new Date(startDate);
   const end = new Date(endDate);
 
   if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    return res.status(400).json({ error: "Invalid date format — use ISO 8601 with UTC offset" });
+    return res
+      .status(400)
+      .json({ error: "Invalid date format — use ISO 8601 with UTC offset" });
   }
 
   if (start >= end) {
     return res.status(400).json({ error: "startDate must be before endDate" });
+  }
+
+  if (end.getTime() - start.getTime() > 31 * 86_400_000) {
+    return res
+      .status(400)
+      .json({ error: "Report ranges must be 31 days or less" });
   }
 
   const resolvedFuelType = fuelType ?? "diesel";
@@ -869,7 +1120,9 @@ router.get("/", async (req: Request, res: Response) => {
     if (!valid) {
       const errors = validateReport.errors;
       appendReportLog({ event: "SCHEMA_INVALID", errors, receiptTime });
-      return res.status(500).json({ error: "Report schema validation failed", details: errors });
+      return res
+        .status(500)
+        .json({ error: "Report schema validation failed", details: errors });
     }
 
     const responseTime = Date.now();
@@ -890,7 +1143,7 @@ router.get("/", async (req: Request, res: Response) => {
       res.setHeader("Content-Type", "text/csv");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="suvion-report-${startDate}-${endDate}.csv"`
+        `attachment; filename="suvion-report-${start.toISOString().slice(0, 10)}-${end.toISOString().slice(0, 10)}.csv"`,
       );
       return res.send(reportToCSV(report));
     }
@@ -899,7 +1152,7 @@ router.get("/", async (req: Request, res: Response) => {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="suvion-report-${startDate}-${endDate}.pdf"`
+        `attachment; filename="suvion-report-${start.toISOString().slice(0, 10)}-${end.toISOString().slice(0, 10)}.pdf"`,
       );
       const doc = reportToPDF(report);
       doc.pipe(res);
@@ -909,7 +1162,7 @@ router.get("/", async (req: Request, res: Response) => {
     return res.json(report);
   } catch (err) {
     appendReportLog({ event: "report_error", error: String(err), receiptTime });
-    return res.status(500).json({ error: "Report generation failed", detail: String(err) });
+    return res.status(500).json({ error: "Report generation failed" });
   }
 });
 

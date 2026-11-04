@@ -1,129 +1,96 @@
-# Integrations Runbook
+# Optional integrations
 
-This project is simulation-first. The core demo path works without paid services:
+The default simulator, dashboard, emissions calculations, and reports work without
+external API keys. Enable extra services only when you need them. Provider keys
+stay in the API; enabling a service can send prompts, vessel context, coordinates,
+or source queries to that provider. See [Security](../SECURITY.md).
 
-```text
-simulation/nmea_generator.py -> UDP :10110 -> apps/api -> MongoDB -> Socket.IO -> apps/web
-```
+## Configure and restart
 
-External integrations are optional, credential-gated, and must degrade gracefully.
+Copy `.env.example` to `.env` without replacing an existing file, then edit the
+root `.env` locally. Never commit keys or put them in `NEXT_PUBLIC_*` variables.
 
-## Runtime Smoke
-
-After MongoDB, API, and web are running:
-
-```sh
-npm run smoke:runtime
-```
-
-This confirms the local runtime is coherent before testing optional live integrations.
-
-## Environment Variables
-
-| Variable | Used by | Required |
-| --- | --- | --- |
-| `MONGO_URI` | API persistence, reports, anomaly detector | Local default exists |
-| `NMEA_PORT` | API UDP listener | Local default `10110` |
-| `SIGNALK_ENABLED` | Signal K adapter | Optional; set `true` to enable |
-| `SIGNALK_URL` | Signal K WebSocket stream | Required only when Signal K is enabled |
-| `FIRECRAWL_API_KEY` | Official-source refresh | Optional |
-| `FIRECRAWL_API_URL` | Firecrawl self-hosted base URL | Optional |
-| `OPENAI_API_KEY` | OpenAI Agents SDK validation agent | Optional |
-| `VALIDATION_AGENT_ENABLED` | Enables validation agent route | Optional; default off |
-| `REALTIME_AGENT_ENABLED` | Enables browser OpenAI realtime voice sessions | Optional; default off |
-| `OPENAI_REALTIME_MODEL` | Realtime model override | Optional; default from SDK |
-| `OPENAI_REALTIME_VOICE` | Realtime voice override | Optional |
-| `OPENAI_REALTIME_CALLS_URL` | Realtime WebRTC calls endpoint override | Optional |
-| `OPENWEATHER_API_KEY` | Live weather lookup | Optional |
-| `OPENWEATHER_BASE_URL` | OpenWeather endpoint override | Optional |
-| `ANOMALY_DETECTION_ENABLED` | API anomaly scheduler | Optional; default off |
-| `ANOMALY_LOOKBACK_MINUTES` | Scheduler lookback window | Optional |
-| `ANOMALY_INTERVAL_MS` | Scheduler interval | Optional |
-
-## API Endpoints
-
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /status` | Runtime status for NMEA, Signal K, MongoDB, and anomaly scheduler |
-| `GET /report` | JSON/CSV/PDF sustainability report |
-| `GET /validation/sources` | Cached official-source metadata |
-| `POST /validation/sources/refresh` | Firecrawl official-domain source refresh |
-| `GET /validation/agent/status` | OpenAI validation agent readiness and tool list |
-| `POST /validation/agent` | Optional OpenAI Agents SDK validation run |
-| `GET /validation/realtime/status` | OpenAI realtime maritime agent readiness |
-| `GET /validation/realtime/session-config` | SDK-computed realtime session configuration |
-| `POST /validation/realtime/calls` | WebRTC SDP proxy; keeps `OPENAI_API_KEY` server-side |
-| `GET /weather/current?lat=<lat>&lon=<lon>` | OpenWeather lookup from vessel GNSS or browser geolocation |
-| `GET /anomalies` | Recent persisted anomaly events |
-
-## Firecrawl
-
-Firecrawl is used only to refresh official-source evidence. Searches are restricted to known source domains:
-
-* `imo.org`
-* `wwwcdn.imo.org`
-* `signalk.org`
-
-Without `FIRECRAWL_API_KEY`, reports still include static official-source references with `reference` status.
-
-## OpenAI Agents SDK
-
-The validation agent is disabled by default. To run it locally:
+For Docker, recreate the API after changing supported environment settings:
 
 ```sh
-VALIDATION_AGENT_ENABLED=true OPENAI_API_KEY=... npm run dev -w api
+docker compose up -d api
 ```
 
-The agent has deterministic tools only:
+For native development, stop and restart `npm run dev -w api`. Exported environment
+variables and an API-workspace `.env` take precedence over the root fallback file.
 
-* local emissions calculation
-* official-source lookup
-* validation summary
+| Feature           | Settings in `.env`                                | Behavior                                                                                   |
+| ----------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Signal K          | `SIGNALK_ENABLED=true`, `SIGNALK_URL`             | Connects an optional own-vessel stream; follow the [bridge guide](signalk-architecture.md) |
+| Source refresh    | `FIRECRAWL_API_KEY`                               | Refreshes fixed reference searches when requested                                          |
+| Text assistant    | `OPENAI_API_KEY`, `VALIDATION_AGENT_ENABLED=true` | Enables the optional validation/chat agent                                                 |
+| Voice assistant   | `OPENAI_API_KEY`, `REALTIME_AGENT_ENABLED=true`   | Enables browser microphone/WebRTC sessions                                                 |
+| Weather           | `OPENWEATHER_API_KEY`                             | Looks up the coordinates selected by the user                                              |
+| Anomaly detection | `ANOMALY_DETECTION_ENABLED=true`                  | Runs the Python detector on recent stored readings                                         |
 
-It must not claim regulatory certification or guaranteed IMO compliance.
+The AI flags and anomaly scheduler default to disabled. Adding an OpenAI key alone
+does not enable either assistant. Optional service availability is shown under
+**Weather & optional connections** in the dashboard.
 
-## OpenAI Realtime Agent
+## Source evidence
 
-The dashboard includes a credential-gated realtime maritime voice agent panel. The API uses
-`@openai/agents/realtime` to define the agent and compute the session configuration, then proxies
-browser WebRTC SDP offers to the released Realtime calls endpoint. The browser never receives
-`OPENAI_API_KEY`.
+Reports include static reference links even without Firecrawl. **Refresh** invokes
+fixed searches and updates a local metadata cache; it does not validate report
+arithmetic. Exact HTTPS hostnames are checked against each source's allowlist,
+which includes IMO, EPA, and Signal K hosts.
 
-Enable locally:
+See [Source verification](validation/official-sources.md) for cache behavior,
+status meanings, and the distinction between a verified link and certification.
+
+## Text and voice assistants
+
+The text agent can call local emissions calculations, look up reference metadata,
+and read recent server-side vessel context. Voice sessions use a server-side
+OpenAI connection negotiated through the API. Both are optional interpretations
+of available data; neither certifies compliance or replaces navigation judgment.
+
+`OPENAI_REALTIME_MODEL` and `OPENAI_REALTIME_VOICE` are optional overrides supported
+by the API and Compose. Without overrides, the API uses its SDK model default and
+configured default voice. Provider access and billing are separate from this repo.
+
+Status checks do not start a paid conversation:
 
 ```sh
-REALTIME_AGENT_ENABLED=true OPENAI_API_KEY=... npm run dev -w api
-```
-
-Useful checks:
-
-```sh
+curl http://localhost:4001/validation/agent/status
 curl http://localhost:4001/validation/realtime/status
-curl http://localhost:4001/validation/realtime/session-config
 ```
 
-The realtime agent is instructed on CO2 emissions, vessel operations, route planning,
-navigation, weather interpretation, Signal K/NMEA context, and validation boundaries. It must
-ask for missing route/weather/navigation inputs rather than inventing them.
+Starting a chat, requesting an agent check, or opening a voice session can invoke
+the provider. Browser microphone access requires permission and a secure context
+such as localhost or HTTPS.
 
-## OpenWeather and Geolocation
+## Weather
 
-The dashboard weather panel can use vessel GNSS coordinates from the simulator or browser
-geolocation. Weather calls go through the API:
+Use **Get vessel weather** or **Use my location** to request a lookup explicitly.
+The API sends the selected coordinates to OpenWeather. Missing configuration is
+reported as `not_configured`; the monitoring dashboard continues to work.
 
-```sh
-OPENWEATHER_API_KEY=... npm run dev -w api
-curl 'http://localhost:4001/weather/current?lat=37.7749&lon=-122.4194'
-```
+## Anomaly detection
 
-When `OPENWEATHER_API_KEY` is absent, the endpoint returns `not_configured` and the dashboard
-continues running.
+The scheduler reads MongoDB and invokes `analytics/anomaly_detection.py`.
+The API Docker image includes Python and its MongoDB connector. Native development
+requires installing the optional dependencies in [the analytics guide](../analytics/README.md).
 
-## MCP
+`ANOMALY_INTERVAL_MS` defaults to 300000 and `ANOMALY_LOOKBACK_MINUTES` to 1440.
+The detector is experimental. “No events” does not establish that it is enabled or
+that the vessel is operating normally.
 
-`.vscode/mcp.json` defines Firecrawl and Signal K MCP servers with environment-backed secrets:
+## Advanced native configuration
 
-* `FIRECRAWL_API_KEY=${env:FIRECRAWL_API_KEY}`
-* `SIGNALK_URL=${env:SIGNALK_URL}`
+The API also reads `FIRECRAWL_API_URL`, `OPENAI_REALTIME_CALLS_URL`,
+`OPENAI_REALTIME_TRANSCRIPTION_MODEL`, `OPENWEATHER_BASE_URL`,
+`VALIDATION_SOURCE_CACHE_PATH`, and `ANOMALY_SCRIPT_PATH` from its environment.
+The provided Compose file does not forward these advanced settings. For container
+use, pass them explicitly through a reviewed Compose override; merely adding them
+to the root `.env` does not inject them into the API container.
 
-No secret values should be committed to the MCP config.
+## Editor tools
+
+`.vscode/mcp.json` defines optional Firecrawl and Signal K MCP servers with
+environment-backed configuration. These are developer tools, independent of the
+runtime integrations. Opening the dashboard does not require starting them.

@@ -35,8 +35,8 @@ function pctError(computed: number, reference: number): number {
 // ─── Test matrix: 5 fuel types × 20 consumption rates ────────────────────────
 
 const CONSUMPTION_RATES_LH = [
-  0.1, 0.5, 1.0, 2.0, 3.5, 5.0, 7.5, 10.0, 12.5, 15.0,
-  20.0, 30.0, 50.0, 75.0, 100.0, 150.0, 200.0, 300.0, 400.0, 500.0,
+  0.1, 0.5, 1.0, 2.0, 3.5, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0, 30.0, 50.0, 75.0,
+  100.0, 150.0, 200.0, 300.0, 400.0, 500.0,
 ];
 
 describe("calculateCO2 — accuracy vs IMO reference factors", () => {
@@ -124,11 +124,11 @@ describe("calculateCO2 — error handling", () => {
 
 describe("carbonIntensity", () => {
   test("diesel: 0.840 × 3.206 ≈ 2.693 kg CO₂/L", () => {
-    expect(carbonIntensity("diesel")).toBeCloseTo(2.6930, 3);
+    expect(carbonIntensity("diesel")).toBeCloseTo(2.693, 3);
   });
 
   test("HFO: 0.991 × 3.114 ≈ 3.086 kg CO₂/L", () => {
-    expect(carbonIntensity("HFO")).toBeCloseTo(3.0860, 3);
+    expect(carbonIntensity("HFO")).toBeCloseTo(3.086, 3);
   });
 
   test("LNG: 0.450 × 2.750 ≈ 1.238 kg CO₂/L (lowest intensity)", () => {
@@ -139,6 +139,13 @@ describe("carbonIntensity", () => {
 // ─── EmissionsCache ───────────────────────────────────────────────────────────
 
 describe("EmissionsCache", () => {
+  test("a flow change within TTL recomputes emissions, including an engine stop", () => {
+    const cache = new EmissionsCache();
+    cache.get("diesel", 10);
+    expect(cache.get("diesel", 20).co2Kg).toBe(calculateCO2("diesel", 20));
+    expect(cache.get("diesel", 0)).toMatchObject({ co2Kg: 0, cacheHit: false });
+    expect(() => cache.get("diesel", NaN)).toThrow(RangeError);
+  });
   test("first call is a cache miss and computes correct CO₂", () => {
     const cache = new EmissionsCache();
     const entry = cache.get("diesel", 12.5);

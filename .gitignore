@@ -44,3 +44,24 @@ __pycache__/
 
 # analytics runtime artifacts
 analytics/anomaly-events.log
+
+# Secrets, virtual environments, local tools and generated reports
+.env.*
+!.env.example
+!**/.env.example
+.venv/
+venv/
+tmp/
+playwright-report/
+test-results/
+
+# Local academic submissions and planning material.
+/docs/milestones/
+/docs/templates/
+/docs/proposal.md
+/docs/proposal-v2-final.pdf
+/docs/final-report.md
+/docs/Suvion_Systems_Final_Report.docx
+/docs/Suvion_Systems_Final_Report_Rebuilt.docx
+/docs/evidence/
+/scripts/build_final_report_docx.py

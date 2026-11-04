@@ -1,41 +1,37 @@
 {
-  "name": "with-docker",
-  "version": "0.0.0",
+  "name": "suvion-systems",
+  "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*",
+    "apps/api",
+    "apps/web",
     "packages/*"
   ],
   "scripts": {
     "build": "turbo run build",
     "clean": "turbo run clean",
     "dev": "turbo run dev",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "format": "prettier --write \"apps/{api,web}/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.{ts,tsx}\" README.md CONTRIBUTING.md SECURITY.md THIRD_PARTY_NOTICES.md \"docs/{architecture,api,user-guide,references,release-readiness,integrations,signalk-architecture,integration-testing}.md\" \"tests/**/*.ts\" playwright.config.ts",
     "lint": "turbo run lint",
     "smoke:runtime": "node scripts/runtime-smoke.mjs",
-    "test": "turbo run test"
-  },
-  "dependencies": {
-    "next": "14.2.35"
-  },
-  "optionalDependencies": {
-    "@next/swc-darwin-arm64": "14.2.33",
-    "@next/swc-darwin-x64": "14.2.33",
-    "@next/swc-linux-arm64-gnu": "14.2.33",
-    "@next/swc-linux-arm64-musl": "14.2.33",
-    "@next/swc-linux-x64-gnu": "14.2.33",
-    "@next/swc-linux-x64-musl": "14.2.33",
-    "@next/swc-win32-arm64-msvc": "14.2.33",
-    "@next/swc-win32-ia32-msvc": "14.2.33",
-    "@next/swc-win32-x64-msvc": "14.2.33"
+    "test": "turbo run test",
+    "test:python": "python3 -m unittest discover analytics",
+    "check": "npm run lint && npm test && npm run test:python && npm run build",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "postcss": "^8.5.32",
     "prettier": "^3.2.5",
     "turbo": "^2.8.12"
   },
   "packageManager": "npm@11.0.0",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22.0.0",
     "npm": ">=10.0.0"
+  },
+  "license": "MIT",
+  "overrides": {
+    "postcss": "$postcss"
   }
 }

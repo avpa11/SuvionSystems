@@ -28,13 +28,20 @@ export class EmissionsCache {
     if (
       this.entry !== null &&
       this.entry.fuelType === fuelType &&
+      this.entry.consumptionL === consumptionL &&
       now - this.entry.computedAt < this.ttlMs
     ) {
       return { ...this.entry, cacheHit: true };
     }
 
     const co2Kg = calculateCO2(fuelType, consumptionL);
-    this.entry = { fuelType, consumptionL, co2Kg, computedAt: now, cacheHit: false };
+    this.entry = {
+      fuelType,
+      consumptionL,
+      co2Kg,
+      computedAt: now,
+      cacheHit: false,
+    };
     return { ...this.entry };
   }
 

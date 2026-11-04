@@ -4,6 +4,7 @@ import {
   parseGGA,
   parseGLL,
   parseHDG,
+  parseMWV,
   parseXDR,
   parseSentence,
   parseVHW,
@@ -16,13 +17,17 @@ function withChecksum(body: string): string {
 }
 
 function byStream(readings: ReturnType<typeof parseSentence>) {
-  return Object.fromEntries(readings.map((reading) => [reading.stream, reading]));
+  return Object.fromEntries(
+    readings.map((reading) => [reading.stream, reading]),
+  );
 }
 
 describe("NMEA navigation parsing", () => {
   test("parses simulator environment and tank XDR streams", () => {
     const depthKeel = parseXDR(withChecksum("$IIXDR,D,16.50,M,DEPTH_KEEL"));
-    const depthTransducer = parseXDR(withChecksum("$IIXDR,D,18.00,M,DEPTH_TRANSDUCER"));
+    const depthTransducer = parseXDR(
+      withChecksum("$IIXDR,D,18.00,M,DEPTH_TRANSDUCER"),
+    );
     const waterTemp = parseXDR(withChecksum("$IIXDR,C,14.80,C,WATER_TEMP"));
     const waterLevel = parseXDR(withChecksum("$IIXDR,P,74.00,%,WATER_LEVEL"));
 
@@ -35,7 +40,9 @@ describe("NMEA navigation parsing", () => {
   });
 
   test("parses VTG course and speed over ground", () => {
-    const readings = byStream(parseVTG(withChecksum("$IIVTG,207.4,T,,M,8.62,N,15.96,K")));
+    const readings = byStream(
+      parseVTG(withChecksum("$IIVTG,207.4,T,,M,8.62,N,15.96,K")),
+    );
 
     expect(readings.cog?.value).toBeCloseTo(207.4, 1);
     expect(readings.cog?.unit).toBe("°T");
@@ -44,7 +51,9 @@ describe("NMEA navigation parsing", () => {
   });
 
   test("parses VHW speed through water", () => {
-    const readings = byStream(parseVHW(withChecksum("$IIVHW,,T,,M,8.11,N,15.02,K")));
+    const readings = byStream(
+      parseVHW(withChecksum("$IIVHW,,T,,M,8.11,N,15.02,K")),
+    );
 
     expect(readings.stw?.value).toBeCloseTo(8.11, 2);
     expect(readings.stw?.unit).toBe("kn");
@@ -55,12 +64,17 @@ describe("NMEA navigation parsing", () => {
     const readings = byStream(parseHDG(withChecksum("$IIHDG,205.3,,,13.2,W")));
 
     expect(readings.heading?.value).toBeCloseTo(205.3, 1);
+    expect(readings.heading?.unit).toBe("°M");
     expect(readings.magVariation?.value).toBeCloseTo(-13.2, 1);
   });
 
   test("parses GGA GNSS position, quality, and altitude", () => {
     const readings = byStream(
-      parseGGA(withChecksum("$IIGGA,231530,3746.4940,N,12225.1640,W,1,12,0.82,4.7,M,0.0,M,,"))
+      parseGGA(
+        withChecksum(
+          "$IIGGA,231530,3746.4940,N,12225.1640,W,1,12,0.82,4.7,M,0.0,M,,",
+        ),
+      ),
     );
 
     expect(readings.positionLat?.value).toBeCloseTo(37.7749, 4);
@@ -71,16 +85,48 @@ describe("NMEA navigation parsing", () => {
   });
 
   test("parses GLL position", () => {
-    const readings = byStream(parseGLL(withChecksum("$IIGLL,3746.4940,N,12225.1640,W,231530,A,A")));
+    const readings = byStream(
+      parseGLL(withChecksum("$IIGLL,3746.4940,N,12225.1640,W,231530,A,A")),
+    );
 
     expect(readings.positionLat?.value).toBeCloseTo(37.7749, 4);
     expect(readings.positionLon?.value).toBeCloseTo(-122.4194, 4);
   });
 
   test("parses VLW total and trip log", () => {
-    const readings = byStream(parseVLW(withChecksum("$IIVLW,1284.22,N,0.02,N,,N,,N")));
+    const readings = byStream(
+      parseVLW(withChecksum("$IIVLW,1284.22,N,0.02,N,,N,,N")),
+    );
 
     expect(readings.navLog?.value).toBeCloseTo(1284.22, 2);
     expect(readings.tripLog?.value).toBeCloseTo(0.02, 2);
+  });
+});
+
+describe("NMEA boundary validation", () => {
+  test.each(["Infinity", "12garbage", "-3"])(
+    "rejects invalid fuel rate %s",
+    (value) => {
+      expect(
+        parseXDR(withChecksum(`$IIXDR,V,${value},L,FUEL_FLOW`)),
+      ).toBeNull();
+    },
+  );
+  test("converts wind speed units and does not label true wind as apparent", () => {
+    const wind = byStream(parseMWV(withChecksum("$IIMWV,45,R,10,N,A")));
+    expect(wind.windSpeed?.value).toBeCloseTo(5.14444);
+    expect(parseMWV(withChecksum("$IIMWV,45,T,10,N,A"))).toEqual([]);
+  });
+  test("rejects coordinates with impossible minutes or hemispheres", () => {
+    expect(
+      parseGLL(withChecksum("$IIGLL,3799.0,N,12225.0,W,231530,A,A")).some(
+        (reading) => reading.stream === "positionLat",
+      ),
+    ).toBe(false);
+    expect(
+      parseGLL(withChecksum("$IIGLL,3746.0,Q,12225.0,W,231530,A,A")).some(
+        (reading) => reading.stream === "positionLat",
+      ),
+    ).toBe(false);
   });
 });

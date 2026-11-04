@@ -1,7 +1,10 @@
 import { Agent, run, tool, type FunctionTool } from "@openai/agents";
 import { calculateCO2, carbonIntensity, isFuelType } from "@repo/emissions";
 import { getValidationSources } from "./officialSources.js";
-import { formatVesselContextForAgent, getVesselContext } from "./vesselContext.js";
+import {
+  formatVesselContextForAgent,
+  getVesselContext,
+} from "./vesselContext.js";
 
 export interface ValidationAgentResponse {
   configured: boolean;
@@ -20,7 +23,9 @@ export interface ValidationAgentStatus {
 }
 
 function objectArg(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  return input && typeof input === "object"
+    ? (input as Record<string, unknown>)
+    : {};
 }
 
 const emptyObjectParameters: {
@@ -38,7 +43,8 @@ const emptyObjectParameters: {
 export const validationAgentTools: FunctionTool<unknown, any, unknown>[] = [
   tool({
     name: "calculate_local_emissions",
-    description: "Calculate local Suvion CO2 output and carbon intensity for a fuel type and volume.",
+    description:
+      "Calculate local Suvion CO2 output and carbon intensity for a fuel type and volume.",
     strict: false,
     parameters: {
       type: "object",
@@ -85,7 +91,8 @@ export const validationAgentTools: FunctionTool<unknown, any, unknown>[] = [
   }),
   tool({
     name: "summarize_validation",
-    description: "Build a deterministic validation summary from available local and external checks.",
+    description:
+      "Build a deterministic validation summary from available local and external checks.",
     strict: false,
     parameters: {
       type: "object",
@@ -100,7 +107,9 @@ export const validationAgentTools: FunctionTool<unknown, any, unknown>[] = [
       return {
         summary:
           "Suvion calculations remain local and deterministic; external services provide source evidence only.",
-        sourceCount: Number(args.sourceCount ?? getValidationSources().sources.length),
+        sourceCount: Number(
+          args.sourceCount ?? getValidationSources().sources.length,
+        ),
       };
     },
   }),
@@ -117,7 +126,7 @@ export function createValidationAgent(): Agent {
 
 export function getValidationAgentStatus(): ValidationAgentStatus {
   const configured = Boolean(process.env.OPENAI_API_KEY);
-  const enabled = process.env.VALIDATION_AGENT_ENABLED !== "false";
+  const enabled = process.env.VALIDATION_AGENT_ENABLED === "true";
 
   if (!enabled) {
     return {
@@ -126,7 +135,8 @@ export function getValidationAgentStatus(): ValidationAgentStatus {
       status: "disabled",
       sdk: "@openai/agents",
       tools: validationAgentTools.map((toolDefinition) => toolDefinition.name),
-      message: "Set VALIDATION_AGENT_ENABLED=true to run source/report validation through the OpenAI Agents SDK.",
+      message:
+        "Set VALIDATION_AGENT_ENABLED=true to run source/report validation through the OpenAI Agents SDK.",
     };
   }
 
@@ -150,12 +160,15 @@ export function getValidationAgentStatus(): ValidationAgentStatus {
   };
 }
 
-export async function runValidationAgent(prompt: string): Promise<ValidationAgentResponse> {
-  if (process.env.VALIDATION_AGENT_ENABLED === "false") {
+export async function runValidationAgent(
+  prompt: string,
+): Promise<ValidationAgentResponse> {
+  if (process.env.VALIDATION_AGENT_ENABLED !== "true") {
     return {
       configured: Boolean(process.env.OPENAI_API_KEY),
       status: "disabled",
-      message: "Set VALIDATION_AGENT_ENABLED=true to run the OpenAI Agents SDK validation agent.",
+      message:
+        "Set VALIDATION_AGENT_ENABLED=true to run the OpenAI Agents SDK validation agent.",
     };
   }
 
@@ -175,7 +188,9 @@ export async function runValidationAgent(prompt: string): Promise<ValidationAgen
       "User prompt:",
       prompt,
     ].join("\n\n");
-    const result = await run(createValidationAgent(), augmentedPrompt, { maxTurns: 8 });
+    const result = await run(createValidationAgent(), augmentedPrompt, {
+      maxTurns: 8,
+    });
     return {
       configured: true,
       status: "completed",

@@ -7,7 +7,7 @@ import { getWeatherCapability } from "./weather.js";
 export function getRuntimeStatus() {
   const signalK = getSignalKConfig();
   return {
-    status: "ok",
+    status: mongoose.connection.readyState === 1 ? "ok" : "degraded",
     ts: new Date().toISOString(),
     ingestion: {
       nmea: {

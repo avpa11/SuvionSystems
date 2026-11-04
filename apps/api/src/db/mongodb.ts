@@ -6,12 +6,12 @@ const MONGO_URI = process.env.MONGO_URI ?? "mongodb://localhost:27017/suvion";
 export async function connectMongo(): Promise<void> {
   await mongoose.connect(MONGO_URI);
   await syncMongoValidation();
-  log(`MongoDB connected: ${MONGO_URI}`);
+  log("MongoDB connected");
 }
 
 async function createOrModifyCollection(
   name: string,
-  validator: Record<string, unknown>
+  validator: Record<string, unknown>,
 ): Promise<void> {
   const db = mongoose.connection.db;
   if (!db) return;
@@ -20,11 +20,17 @@ async function createOrModifyCollection(
   if (exists) {
     await db.command({ collMod: name, validator });
   } else {
-    await db.createCollection(name, { validator });
+    try {
+      await db.createCollection(name, { validator });
+    } catch (err) {
+      // Mongoose may create an indexed collection after listCollections returns.
+      if ((err as { code?: number }).code !== 48) throw err;
+      await db.command({ collMod: name, validator });
+    }
   }
 }
 
-async function syncMongoValidation(): Promise<void> {
+export async function syncMongoValidation(): Promise<void> {
   const db = mongoose.connection.db;
   if (!db) return;
 
@@ -37,9 +43,11 @@ async function syncMongoValidation(): Promise<void> {
         fuelType: { bsonType: "string" },
         fuelRateLh: { bsonType: ["double", "int", "long", "decimal", "null"] },
         co2RateKgh: { bsonType: ["double", "int", "long", "decimal", "null"] },
-        sampleIntervalSeconds: { bsonType: ["double", "int", "long", "decimal", "null"] },
-        consumptionL: { bsonType: "double" },
-        co2Kg: { bsonType: "double" },
+        sampleIntervalSeconds: {
+          bsonType: ["double", "int", "long", "decimal", "null"],
+        },
+        consumptionL: { bsonType: ["double", "int", "long", "decimal"] },
+        co2Kg: { bsonType: ["double", "int", "long", "decimal"] },
         cacheHit: { bsonType: "bool" },
         timestamp: { bsonType: "date" },
       },
@@ -50,7 +58,14 @@ async function syncMongoValidation(): Promise<void> {
   const anomalyValidator = {
     $jsonSchema: {
       bsonType: "object",
-      required: ["timestamp", "score", "isAnomaly", "features", "source", "createdAt"],
+      required: [
+        "timestamp",
+        "score",
+        "isAnomaly",
+        "features",
+        "source",
+        "createdAt",
+      ],
       properties: {
         _id: { bsonType: "objectId" },
         timestamp: { bsonType: "date" },
@@ -65,13 +80,30 @@ async function syncMongoValidation(): Promise<void> {
     },
   };
 
-  try {
+  {
+    await createOrModifyCollection("sensorreadings", {
+      $jsonSchema: {
+        bsonType: "object",
+        required: ["stream", "value", "unit", "timestamp"],
+        properties: {
+          _id: { bsonType: "objectId" },
+          stream: {
+            bsonType: "string",
+            enum: ["fuel", "generator", "water", "temperature"],
+          },
+          value: { bsonType: ["double", "int", "long", "decimal"] },
+          unit: { bsonType: "string" },
+          timestamp: { bsonType: "date" },
+        },
+        additionalProperties: false,
+      },
+    });
     await createOrModifyCollection("emissionsreadings", emissionsValidator);
     await createOrModifyCollection("anomalyevents", anomalyValidator);
     await db.collection("emissionsreadings").createIndex({ timestamp: 1 });
-    await db.collection("anomalyevents").createIndex({ timestamp: -1, score: -1 });
-  } catch (err) {
-    log(`MongoDB validator sync warning: ${err}`);
+    await db
+      .collection("anomalyevents")
+      .createIndex({ timestamp: -1, score: -1 });
   }
 }
 
@@ -79,7 +111,11 @@ async function syncMongoValidation(): Promise<void> {
 
 const sensorReadingSchema = new Schema(
   {
-    stream: { type: String, required: true, enum: ["fuel", "generator", "water", "temperature"] },
+    stream: {
+      type: String,
+      required: true,
+      enum: ["fuel", "generator", "water", "temperature"],
+    },
     value: { type: Number, required: true },
     unit: { type: String, required: true },
     timestamp: { type: Date, required: true, index: true },
@@ -88,7 +124,7 @@ const sensorReadingSchema = new Schema(
     strict: true,
     // MongoDB collection validator uses additionalProperties:false — __v must not be added
     versionKey: false,
-  }
+  },
 );
 
 sensorReadingSchema.index({ stream: 1, timestamp: 1 });
@@ -108,10 +144,13 @@ const emissionsReadingSchema = new Schema(
     cacheHit: { type: Boolean, required: true },
     timestamp: { type: Date, required: true, index: true },
   },
-  { strict: true, versionKey: false }
+  { strict: true, versionKey: false },
 );
 
-export const EmissionsReading = model("EmissionsReading", emissionsReadingSchema);
+export const EmissionsReading = model(
+  "EmissionsReading",
+  emissionsReadingSchema,
+);
 
 // ─── Anomaly event schema ────────────────────────────────────────────────────
 
@@ -122,10 +161,19 @@ const anomalyEventSchema = new Schema(
     isAnomaly: { type: Boolean, required: true, default: true },
     features: { type: Schema.Types.Mixed, required: true },
     contributing: { type: [String], default: [] },
-    source: { type: String, required: true, default: "analytics/anomaly_detection.py" },
-    createdAt: { type: Date, required: true, default: () => new Date(), index: true },
+    source: {
+      type: String,
+      required: true,
+      default: "analytics/anomaly_detection.py",
+    },
+    createdAt: {
+      type: Date,
+      required: true,
+      default: () => new Date(),
+      index: true,
+    },
   },
-  { strict: true, versionKey: false }
+  { strict: true, versionKey: false },
 );
 
 anomalyEventSchema.index({ timestamp: -1, score: -1 });
@@ -140,7 +188,7 @@ const lifecycleLogSchema = new Schema(
     deletedCount: { type: Number },
     timestamp: { type: Date, required: true, default: () => new Date() },
   },
-  { strict: true }
+  { strict: true },
 );
 
 export const LifecycleLog = model("LifecycleLog", lifecycleLogSchema);
