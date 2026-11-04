@@ -10,7 +10,7 @@
     "./node": "./node/jest-preset.js",
     "./node/jest-preset": "./node/jest-preset.js"
   },
-  "dependencies": {
+  "devDependencies": {
     "jest": "^30.2.0",
     "ts-jest": "^29.4.6"
   }

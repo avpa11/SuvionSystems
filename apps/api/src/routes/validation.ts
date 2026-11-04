@@ -1,7 +1,12 @@
 import express, { Router, type Request, type Response } from "express";
-import { checkAbbHealth, checkAbbRoute } from "../services/abb.js";
-import { getValidationSources, refreshValidationSources } from "../services/officialSources.js";
-import { getValidationAgentStatus, runValidationAgent } from "../services/validationAgent.js";
+import {
+  getValidationSources,
+  refreshValidationSources,
+} from "../services/officialSources.js";
+import {
+  getValidationAgentStatus,
+  runValidationAgent,
+} from "../services/validationAgent.js";
 import {
   createRealtimeCall,
   getRealtimeAgentStatus,
@@ -21,17 +26,11 @@ router.post("/sources/refresh", async (_req: Request, res: Response) => {
 });
 
 router.get("/vessel-context", async (_req: Request, res: Response) => {
-  res.json(await getVesselContext());
-});
-
-router.get("/abb/health", async (_req: Request, res: Response) => {
-  const response = await checkAbbHealth();
-  res.status(response.status === "error" ? 502 : 200).json(response);
-});
-
-router.post("/abb/route-check", async (req: Request, res: Response) => {
-  const response = await checkAbbRoute(req.body ?? {});
-  res.status(response.status === "error" ? 502 : 200).json(response);
+  try {
+    res.json(await getVesselContext());
+  } catch {
+    res.status(503).json({ error: "Vessel context is unavailable" });
+  }
 });
 
 router.get("/agent/status", (_req: Request, res: Response) => {
@@ -39,6 +38,18 @@ router.get("/agent/status", (_req: Request, res: Response) => {
 });
 
 router.post("/agent", async (req: Request, res: Response) => {
+  if (
+    typeof req.body?.prompt !== "string" ||
+    !req.body.prompt.trim() ||
+    req.body.prompt.length > 12_000
+  ) {
+    res
+      .status(400)
+      .json({
+        error: "prompt must be a non-empty string of at most 12000 characters",
+      });
+    return;
+  }
   const prompt =
     typeof req.body?.prompt === "string"
       ? req.body.prompt
@@ -77,7 +88,7 @@ router.post(
     }
 
     res.status(response.status === "error" ? 502 : 200).json(response);
-  }
+  },
 );
 
 export default router;

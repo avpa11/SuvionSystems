@@ -1,135 +1,85 @@
-# Integration Testing and Runtime Verification
+# Runtime verification
 
-Use this sequence for Week 10-11 verification and Week 12 demo prep.
+Run commands from the repository root. The [quick start](../README.md#quick-start)
+provides installation prerequisites; [release readiness](release-readiness.md)
+records a dated verification run. Use synthetic data for repeatable checks.
 
-## 1. Start MongoDB
-
-```sh
-docker-compose up -d mongo
-docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Status}}'
-```
-
-Expected:
-
-```text
-mongo    0.0.0.0:27017->27017/tcp    Up ...
-```
-
-## 2. Start the API
+## Automated code checks
 
 ```sh
-npm run dev -w api
+npm ci
+npm run check
 ```
 
-Expected:
+This runs lint, TypeScript tests, Python analytics tests, and production builds.
+API tests use a temporary MongoDB instance, separate from your demo database. The
+first run may download a MongoDB binary. No external AI/weather credentials are
+needed for these tests.
 
-* API on `http://localhost:4001`
-* NMEA UDP listener on `10110`
-* MongoDB connected
-* Signal K disabled unless `SIGNALK_ENABLED=true`
-
-## 3. Start the web dashboard
+## Verify the Docker stack
 
 ```sh
-npm run dev -w web
-```
-
-Expected:
-
-* Dashboard on `http://localhost:4000`
-* Socket.IO connects to `http://localhost:4001`
-
-## 4. Run smoke verification
-
-```sh
+docker compose up --build --wait
 npm run smoke:runtime
 ```
 
-The smoke command checks MongoDB, API health/status, report generation, validation-source metadata, ABB graceful response, anomalies endpoint, and the web app.
+The Compose stack includes its own simulator. Do not run a second host simulator
+against it. MongoDB, the API, and the dashboard have readiness checks.
 
-## 5. Stream simulated data
+The seven smoke checks cover MongoDB connectivity, API health/readiness,
+reference metadata, the anomalies endpoint, report generation, and dashboard HTTP
+availability. They can pass with no sensor data, so verify the live feed separately.
 
 ```sh
-python3 simulation/nmea_generator.py --duration 60
+npx playwright install chromium
+npm run test:browser
 ```
 
-Expected:
+Browser smoke tests check arriving readings, navigation selection, report
+rendering, a 390-pixel mobile layout, and offline guidance. They require the stack
+and simulator to keep running. They do not test paid provider calls or establish
+full accessibility, cross-browser coverage, or sensor accuracy.
 
-* Dashboard fuel, generator, water, temperature, heading, wind, COG, SOG, STW, magnetic variation, GNSS, log, trip, and position instruments update.
-* CO2 emission rate updates in `kg/h`.
-* Report totals integrate rates over elapsed time.
+Stop the stack with `docker compose down` when finished. This preserves its data
+volume. `WEB_HOST`, `API_HOST`, `MONGO_HOST`, and `MONGO_PORT` can override the
+smoke-test addresses; browser tests use `WEB_HOST`.
 
-## Optional: Signal K
+## Verify a native setup
+
+Complete the [native setup](../README.md#native-development), including shared
+package builds. Start MongoDB with `docker compose up -d mongo`, then run each of
+these in a separate terminal:
 
 ```sh
-SIGNALK_ENABLED=true \
-SIGNALK_URL=ws://localhost:3000/signalk/v1/stream \
 npm run dev -w api
+npm run dev -w web
+python3 simulation/nmea_generator.py --scenario cruising
 ```
 
-Signal K current tank level is displayed as tank level, not counted as water usage.
+Run the runtime and browser checks above while all processes are active. Verify:
 
-## Optional: Firecrawl
+- **Receiving data** appears and readings have units and recent timestamps.
+- Environment and navigation instruments populate when selected.
+- A report for the current UTC day shows sample coverage and download controls.
+- Stopping the simulator produces **Sensor feed paused** after 15 seconds and
+  clears expired readings. Restarting it restores the instruments.
 
-```sh
-FIRECRAWL_API_KEY=... npm run dev -w api
-curl -X POST http://localhost:4001/validation/sources/refresh
-```
+The smoke test alone does not verify CSV/PDF file contents. API integration tests
+check report responses and download types; inspect an exported document when
+changing its layout or serialization.
 
-Searches are restricted to official domains. Reports still generate when Firecrawl is unavailable.
+## Optional services
 
-## Optional: OpenAI Agents SDK
-
-```sh
-VALIDATION_AGENT_ENABLED=true OPENAI_API_KEY=... npm run dev -w api
-curl -X POST http://localhost:4001/validation/agent \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"Validate this Suvion emissions setup."}'
-```
-
-The agent summarizes validation evidence only. It does not certify compliance.
-
-## Optional: OpenAI Realtime Agent
+Configure services using [the integration guide](integrations.md), then restart or
+recreate the API. Check status before invoking a provider:
 
 ```sh
-REALTIME_AGENT_ENABLED=true OPENAI_API_KEY=... npm run dev -w api
+curl http://localhost:4001/status
+curl http://localhost:4001/validation/agent/status
 curl http://localhost:4001/validation/realtime/status
 ```
 
-Expected:
-
-* `status` is `ready` when the key and feature flag are present.
-* The dashboard integration panel enables the realtime voice button.
-* Browser microphone traffic is negotiated through `POST /validation/realtime/calls`; the API key remains server-side.
-
-## Optional: OpenWeather
-
-```sh
-OPENWEATHER_API_KEY=... npm run dev -w api
-curl 'http://localhost:4001/weather/current?lat=37.7749&lon=-122.4194'
-```
-
-Expected:
-
-* `status` is `completed` with temperature, wind, humidity, pressure, and visibility.
-* Without the key, `status` is `not_configured` and the dashboard still runs.
-* The dashboard can request weather from vessel GNSS or browser geolocation.
-
-## Optional: ABB
-
-```sh
-ABB_TOKEN_URL=... \
-ABB_CLIENT_ID=... \
-ABB_CLIENT_SECRET=... \
-ABB_OAUTH_SCOPE=... \
-ABB_BASE_URL=https://api.voyageoptimization.abb.com/vessel-routing/v2 \
-npm run dev -w api
-```
-
-Then:
-
-```sh
-curl http://localhost:4001/validation/abb/health
-```
-
-ABB route checks are external reasonableness checks and may return `not_comparable` if route/weather outputs do not align with local sensor-only report totals.
+A feature should report disabled or not configured when its prerequisites are
+absent. Running a source refresh, weather lookup, agent check, or voice session
+can call an external service. These are manual integration checks, separate from
+the credential-free automated suite.

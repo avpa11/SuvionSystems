@@ -1,6 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs";
-import { checkAbbHealth, checkAbbRoute } from "../services/abb.js";
 import { refreshValidationSources } from "../services/officialSources.js";
 import { runValidationAgent } from "../services/validationAgent.js";
 import {
@@ -21,10 +20,6 @@ const ORIGINAL_ENV = { ...process.env };
 beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
   clearVesselContextForTest();
-  delete process.env.ABB_TOKEN_URL;
-  delete process.env.ABB_CLIENT_ID;
-  delete process.env.ABB_CLIENT_SECRET;
-  delete process.env.ABB_BASE_URL;
   delete process.env.FIRECRAWL_API_KEY;
   delete process.env.OPENAI_API_KEY;
   delete process.env.VALIDATION_AGENT_ENABLED;
@@ -37,18 +32,6 @@ afterEach(() => {
 });
 
 describe("validation services", () => {
-  test("ABB health reports not configured without credentials", async () => {
-    const response = await checkAbbHealth();
-    expect(response.configured).toBe(false);
-    expect(response.status).toBe("not_configured");
-  });
-
-  test("ABB route check reports not configured without credentials", async () => {
-    const response = await checkAbbRoute({});
-    expect(response.configured).toBe(false);
-    expect(response.status).toBe("not_configured");
-  });
-
   test("Firecrawl refresh is unavailable without an API key", async () => {
     const cachePath = "/tmp/suvion-validation-test-cache.json";
     process.env.VALIDATION_SOURCE_CACHE_PATH = cachePath;
@@ -60,12 +43,14 @@ describe("validation services", () => {
 
     const response = await refreshValidationSources();
     expect(response.configured).toBe(false);
-    expect(response.sources.every((source) => source.status === "unavailable")).toBe(true);
+    expect(
+      response.sources.every((source) => source.status === "unavailable"),
+    ).toBe(true);
   });
 
-  test("validation agent reports not configured without an API key by default", async () => {
+  test("validation agent is disabled by default", async () => {
     const response = await runValidationAgent("validate");
-    expect(response.status).toBe("not_configured");
+    expect(response.status).toBe("disabled");
   });
 
   test("validation agent can be explicitly disabled", async () => {
@@ -74,12 +59,12 @@ describe("validation services", () => {
     expect(response.status).toBe("disabled");
   });
 
-  test("realtime agent reports not configured without an API key by default", async () => {
+  test("realtime agent is disabled by default", async () => {
     const status = getRealtimeAgentStatus();
     const config = await getRealtimeSessionConfig();
 
-    expect(status.status).toBe("not_configured");
-    expect(config.status).toBe("not_configured");
+    expect(status.status).toBe("disabled");
+    expect(config.status).toBe("disabled");
   });
 
   test("realtime agent can be explicitly disabled", async () => {
@@ -121,9 +106,24 @@ describe("validation services", () => {
 
   test("vessel context records live backend signals for agent prompts", async () => {
     const now = new Date("2026-07-09T12:00:00.000Z");
-    recordVesselReading({ stream: "fuel", value: 11.2, unit: "L/h", timestamp: now });
-    recordVesselReading({ stream: "positionLat", value: 37.7749, unit: "deg", timestamp: now });
-    recordVesselReading({ stream: "positionLon", value: -122.4194, unit: "deg", timestamp: now });
+    recordVesselReading({
+      stream: "fuel",
+      value: 11.2,
+      unit: "L/h",
+      timestamp: now,
+    });
+    recordVesselReading({
+      stream: "positionLat",
+      value: 37.7749,
+      unit: "deg",
+      timestamp: now,
+    });
+    recordVesselReading({
+      stream: "positionLon",
+      value: -122.4194,
+      unit: "deg",
+      timestamp: now,
+    });
     recordVesselReading({
       stream: "co2",
       value: 30.16,
@@ -141,9 +141,43 @@ describe("validation services", () => {
 
     expect(context.position).toMatchObject({ lat: 37.7749, lon: -122.4194 });
     expect(context.latestSignals.map((signal) => signal.stream)).toEqual(
-      expect.arrayContaining(["fuel", "positionLat", "positionLon", "co2"])
+      expect.arrayContaining(["fuel", "positionLat", "positionLon", "co2"]),
     );
     expect(promptText).toContain("Fuel flow");
     expect(promptText).toContain("CO2 rate");
   });
 });
+
+test("source verification rejects a lookalike domain containing an official hostname", async () => {
+  process.env.FIRECRAWL_API_KEY = "test-key";
+  const fakeFetch = (async () =>
+    new Response(
+      JSON.stringify({
+        data: {
+          web: [
+            {
+              url: "https://imo.org.attacker.example/paper",
+              title: "Untrusted",
+            },
+          ],
+        },
+      }),
+      { status: 200 },
+    )) as typeof fetch;
+  const response = await refreshValidationSources(fakeFetch);
+  expect(response.sources.every((source) => source.status !== "verified")).toBe(
+    true,
+  );
+  expect(
+    response.sources.every((source) => !source.url.includes("attacker")),
+  ).toBe(true);
+});
+
+test.each(["", " ", [], null, {}])(
+  "weather rejects missing or non-scalar coordinates",
+  async (value) => {
+    expect((await getCurrentWeather(value, "10")).status).toBe(
+      "invalid_request",
+    );
+  },
+);

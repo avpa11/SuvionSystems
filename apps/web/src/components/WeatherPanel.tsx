@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 interface WeatherPanelProps {
   vesselLat: number | null;
@@ -31,36 +31,37 @@ function fmt(value: number | null | undefined, suffix: string, precision = 1) {
 }
 
 export function WeatherPanel({ vesselLat, vesselLon }: WeatherPanelProps) {
-  const apiHost = useMemo(() => process.env.NEXT_PUBLIC_API_HOST ?? "http://localhost:4001", []);
+  const apiHost = useMemo(
+    () => process.env.NEXT_PUBLIC_API_HOST ?? "http://localhost:4001",
+    [],
+  );
   const [weather, setWeather] = useState<WeatherResponse | null>(null);
   const [source, setSource] = useState<"vessel" | "browser">("vessel");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const loadWeather = useCallback(async (lat: number, lon: number, nextSource: "vessel" | "browser") => {
-    setLoading(true);
-    setSource(nextSource);
-    setMessage("");
-    try {
-      const params = new URLSearchParams({ lat: String(lat), lon: String(lon) });
-      const response = await fetch(`${apiHost}/weather/current?${params}`);
-      const payload = (await response.json()) as WeatherResponse;
-      setWeather(payload);
-      if (payload.message) setMessage(payload.message);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [apiHost]);
-
-  useEffect(() => {
-    if (vesselLat !== null && vesselLon !== null) {
-      loadWeather(vesselLat, vesselLon, "vessel").catch((err) =>
-        setMessage(err instanceof Error ? err.message : String(err))
-      );
-    }
-  }, [loadWeather, vesselLat, vesselLon]);
+  const loadWeather = useCallback(
+    async (lat: number, lon: number, nextSource: "vessel" | "browser") => {
+      setLoading(true);
+      setSource(nextSource);
+      setMessage("");
+      try {
+        const params = new URLSearchParams({
+          lat: String(lat),
+          lon: String(lon),
+        });
+        const response = await fetch(`${apiHost}/weather/current?${params}`);
+        const payload = (await response.json()) as WeatherResponse;
+        setWeather(payload);
+        if (payload.message) setMessage(payload.message);
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [apiHost],
+  );
 
   function useBrowserLocation() {
     if (!navigator.geolocation) {
@@ -71,15 +72,19 @@ export function WeatherPanel({ vesselLat, vesselLon }: WeatherPanelProps) {
     setLoading(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        loadWeather(position.coords.latitude, position.coords.longitude, "browser").catch((err) =>
-          setMessage(err instanceof Error ? err.message : String(err))
+        loadWeather(
+          position.coords.latitude,
+          position.coords.longitude,
+          "browser",
+        ).catch((err) =>
+          setMessage(err instanceof Error ? err.message : String(err)),
         );
       },
       (err) => {
         setLoading(false);
         setMessage(err.message);
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 8000 },
     );
   }
 
@@ -90,9 +95,15 @@ export function WeatherPanel({ vesselLat, vesselLon }: WeatherPanelProps) {
       <div className="section-label">WEATHER</div>
       <div className="weather-instrument">
         <div className="weather-instrument__dial">
-          <span className="weather-instrument__condition">{wx?.condition ?? "WX"}</span>
-          <span className="weather-instrument__temp">{fmt(wx?.temperatureC, "C", 0)}</span>
-          <span className="weather-instrument__source">{source === "vessel" ? "vessel position" : "browser location"}</span>
+          <span className="weather-instrument__condition">
+            {wx?.condition ?? "WX"}
+          </span>
+          <span className="weather-instrument__temp">
+            {fmt(wx?.temperatureC, "C", 0)}
+          </span>
+          <span className="weather-instrument__source">
+            {source === "vessel" ? "vessel position" : "browser location"}
+          </span>
         </div>
         <div className="weather-instrument__readouts">
           <span>Feels {fmt(wx?.feelsLikeC, "C", 0)}</span>
@@ -106,12 +117,16 @@ export function WeatherPanel({ vesselLat, vesselLon }: WeatherPanelProps) {
           <button
             type="button"
             disabled={loading || vesselLat === null || vesselLon === null}
-            onClick={() => vesselLat !== null && vesselLon !== null && loadWeather(vesselLat, vesselLon, "vessel")}
+            onClick={() =>
+              vesselLat !== null &&
+              vesselLon !== null &&
+              loadWeather(vesselLat, vesselLon, "vessel")
+            }
           >
-            Vessel WX
+            Get vessel weather
           </button>
           <button type="button" disabled={loading} onClick={useBrowserLocation}>
-            Use location
+            Use my location
           </button>
         </div>
       </div>

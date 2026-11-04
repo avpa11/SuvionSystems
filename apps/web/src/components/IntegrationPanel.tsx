@@ -25,12 +25,6 @@ interface SourceResponse {
   sources: Array<{ name: string; status: string; url: string; fetchedAt?: string }>;
 }
 
-interface AbbHealth {
-  configured: boolean;
-  status: string;
-  message?: string;
-}
-
 interface AgentStatus {
   configured: boolean;
   enabled: boolean;
@@ -64,24 +58,21 @@ export function IntegrationPanel() {
   const apiHost = useMemo(() => process.env.NEXT_PUBLIC_API_HOST ?? "http://localhost:4001", []);
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
   const [sources, setSources] = useState<SourceResponse | null>(null);
-  const [abb, setAbb] = useState<AbbHealth | null>(null);
   const [agent, setAgent] = useState<AgentStatus | null>(null);
   const [realtime, setRealtime] = useState<RealtimeStatus | null>(null);
   const [message, setMessage] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [runtimeRes, sourceRes, abbRes, agentRes, realtimeRes] = await Promise.all([
+    const [runtimeRes, sourceRes, agentRes, realtimeRes] = await Promise.all([
       fetch(`${apiHost}/status`).then((r) => r.json()).catch(() => null),
       fetch(`${apiHost}/validation/sources`).then((r) => r.json()).catch(() => null),
-      fetch(`${apiHost}/validation/abb/health`).then((r) => r.json()).catch(() => null),
       fetch(`${apiHost}/validation/agent/status`).then((r) => r.json()).catch(() => null),
       fetch(`${apiHost}/validation/realtime/status`).then((r) => r.json()).catch(() => null),
     ]);
 
     setRuntime(runtimeRes);
     setSources(sourceRes);
-    setAbb(abbRes);
     setAgent(agentRes);
     setRealtime(realtimeRes ?? runtimeRes?.integrations?.realtimeAgent ?? null);
   }, [apiHost]);
@@ -164,17 +155,6 @@ export function IntegrationPanel() {
             </span>
           </div>
           <RealtimeAgentPanel apiHost={apiHost} status={realtime} onStatusMessage={setMessage} />
-        </div>
-
-        <div className="integration-card">
-          <div className="integration-card__topline">
-            <span className="integration-card__name">ABB Route Check</span>
-            <span className={`integration-card__state ${stateClass(abb?.status, abb?.configured)}`}>
-              {labelFor(abb?.status, abb?.configured)}
-            </span>
-          </div>
-          <div className="integration-card__metric">ABB</div>
-          <div className="integration-card__detail">{abb?.message ?? "credential-gated reasonableness check"}</div>
         </div>
 
         <div className="integration-card">

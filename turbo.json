@@ -8,8 +8,8 @@
       "env": ["NEXT_PUBLIC_API_HOST", "NEXT_PUBLIC_SIGNALK_HOST"]
     },
     "test": {
-      "outputs": ["coverage/**"],
-      "dependsOn": []
+      "outputs": [],
+      "dependsOn": ["^build"]
     },
     "lint": {
       "dependsOn": ["^build"]

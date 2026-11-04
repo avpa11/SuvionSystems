@@ -3,7 +3,11 @@
 import { FormEvent, useMemo, useRef, useState } from "react";
 import { MessageCircle, Send, X } from "lucide-react";
 import type { SensorState, SensorUpdate } from "../hooks/useSensorData";
-import { RealtimeAgentPanel, type RealtimeAgentPanelHandle, type RealtimeStatus } from "./RealtimeAgentPanel";
+import {
+  RealtimeAgentPanel,
+  type RealtimeAgentPanelHandle,
+  type RealtimeStatus,
+} from "./RealtimeAgentPanel";
 
 type ChatRole = "assistant" | "user";
 
@@ -51,17 +55,24 @@ const SENSOR_LABELS: Partial<Record<keyof SensorState, string>> = {
   windSpeed: "apparent wind speed",
 };
 
-function summarizeReading(label: string, update: SensorUpdate | null): string | null {
+function summarizeReading(
+  label: string,
+  update: SensorUpdate | null,
+): string | null {
   if (!update) return null;
   return `${label}: ${update.value.toFixed(2)} ${update.unit}`;
 }
 
 function summarizeSensors(sensorState: SensorState): string {
   const lines = Object.entries(SENSOR_LABELS)
-    .map(([key, label]) => summarizeReading(label, sensorState[key as keyof SensorState]))
+    .map(([key, label]) =>
+      summarizeReading(label, sensorState[key as keyof SensorState]),
+    )
     .filter((line): line is string => Boolean(line));
 
-  return lines.length > 0 ? lines.join("; ") : "No live sensor readings are available yet.";
+  return lines.length > 0
+    ? lines.join("; ")
+    : "No live sensor readings are available yet.";
 }
 
 function transcript(messages: ChatMessage[]): string {
@@ -72,18 +83,24 @@ function transcript(messages: ChatMessage[]): string {
 }
 
 export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
-  const apiHost = useMemo(() => process.env.NEXT_PUBLIC_API_HOST ?? "http://localhost:4001", []);
+  const apiHost = useMemo(
+    () => process.env.NEXT_PUBLIC_API_HOST ?? "http://localhost:4001",
+    [],
+  );
   const realtimeRef = useRef<RealtimeAgentPanelHandle | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<AgentStatus | null>(null);
-  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus | null>(null);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus | null>(
+    null,
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
       role: "assistant",
-      content: "Suvion maritime agent online.",
+      content:
+        "Ask about vessel data and emissions. The assistant requires an optional server-side OpenAI connection.",
     },
   ]);
 
@@ -109,8 +126,12 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
   function appendMessage(role: ChatRole, content: string) {
     setMessages((current) => {
       const previous = current[current.length - 1];
-      if (previous?.role === role && previous.content === content) return current;
-      return [...current, { id: Date.now() + Math.floor(Math.random() * 1000), role, content }];
+      if (previous?.role === role && previous.content === content)
+        return current;
+      return [
+        ...current,
+        { id: Date.now() + Math.floor(Math.random() * 1000), role, content },
+      ];
     });
   }
 
@@ -179,30 +200,51 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
   return (
     <div className={`agent-chat ${open ? "agent-chat--open" : ""}`}>
       {open && (
-        <div className="agent-chat__panel" role="dialog" aria-label="Suvion agent chat">
+        <div
+          className="agent-chat__panel"
+          role="dialog"
+          aria-label="Suvion agent chat"
+        >
           <div className="agent-chat__header">
             <div>
               <div className="agent-chat__title">Suvion Agent</div>
               <div className="agent-chat__status">
-                Text {status?.status ?? "checking"} / Voice {realtimeStatus?.status ?? "checking"}
+                Text {status?.status ?? "checking"} / Voice{" "}
+                {realtimeStatus?.status ?? "checking"}
               </div>
             </div>
-            <button type="button" className="agent-chat__close" onClick={toggleOpen} aria-label="Close chat">
+            <button
+              type="button"
+              className="agent-chat__close"
+              onClick={toggleOpen}
+              aria-label="Close chat"
+            >
               <X size={17} aria-hidden="true" />
             </button>
           </div>
 
           <div className="agent-chat__messages" aria-live="polite">
             {messages.map((message) => (
-              <div key={message.id} className={`agent-chat__message agent-chat__message--${message.role}`}>
+              <div
+                key={message.id}
+                className={`agent-chat__message agent-chat__message--${message.role}`}
+              >
                 {message.content}
               </div>
             ))}
-            {busy && <div className="agent-chat__message agent-chat__message--assistant">Thinking...</div>}
+            {busy && (
+              <div className="agent-chat__message agent-chat__message--assistant">
+                Thinking...
+              </div>
+            )}
           </div>
 
-          {status?.message && <div className="agent-chat__notice">{status.message}</div>}
-          {realtimeStatus?.message && <div className="agent-chat__notice">{realtimeStatus.message}</div>}
+          {status?.message && (
+            <div className="agent-chat__notice">{status.message}</div>
+          )}
+          {realtimeStatus?.message && (
+            <div className="agent-chat__notice">{realtimeStatus.message}</div>
+          )}
 
           <div className="agent-chat__voice">
             <RealtimeAgentPanel
@@ -218,10 +260,17 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Ask about emissions, route checks, or live vessel data"
+              aria-label="Message to the maritime assistant"
+              maxLength={8000}
+              placeholder="Ask about emissions or vessel data"
               rows={2}
             />
-            <button type="submit" disabled={busy || draft.trim().length === 0}>
+            <button
+              type="submit"
+              disabled={
+                busy || status?.status !== "ready" || draft.trim().length === 0
+              }
+            >
               <Send size={16} aria-hidden="true" />
               Send
             </button>
@@ -229,7 +278,12 @@ export function AgentChatPopup({ sensorState }: AgentChatPopupProps) {
         </div>
       )}
 
-      <button type="button" className="agent-chat__launcher" onClick={toggleOpen} aria-expanded={open}>
+      <button
+        type="button"
+        className="agent-chat__launcher"
+        onClick={toggleOpen}
+        aria-expanded={open}
+      >
         <MessageCircle size={17} aria-hidden="true" />
         AI Chat
       </button>

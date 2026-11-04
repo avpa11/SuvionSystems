@@ -20,8 +20,9 @@ export interface ValidationSourcesResponse {
   sources: ValidationSource[];
 }
 
-const FIRECRAWL_API_URL = process.env.FIRECRAWL_API_URL || "https://api.firecrawl.dev";
-const CACHE_PATH =
+const FIRECRAWL_API_URL =
+  process.env.FIRECRAWL_API_URL || "https://api.firecrawl.dev";
+const cachePath = () =>
   process.env.VALIDATION_SOURCE_CACHE_PATH ??
   path.join(os.tmpdir(), "suvion-validation-sources.json");
 
@@ -49,7 +50,8 @@ export const OFFICIAL_SOURCE_DEFINITIONS: ValidationSource[] = [
     title: "IMO Fourth Greenhouse Gas Study 2020",
     url: "https://www.imo.org/en/OurWork/Environment/Pages/Fourth-IMO-Greenhouse-Gas-Study-2020.aspx",
     domains: ["imo.org", "www.imo.org"],
-    query: "IMO Fourth Greenhouse Gas Study 2020 shipping emissions global anthropogenic emissions 2.89%",
+    query:
+      "IMO Fourth Greenhouse Gas Study 2020 shipping emissions global anthropogenic emissions 2.89%",
     fetchedAt: null,
     status: "reference",
   },
@@ -58,7 +60,8 @@ export const OFFICIAL_SOURCE_DEFINITIONS: ValidationSource[] = [
     title: "EPA greenhouse gas emissions from a typical passenger vehicle",
     url: "https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle",
     domains: ["epa.gov", "www.epa.gov"],
-    query: "EPA typical passenger vehicle emits 4.6 metric tons carbon dioxide per year",
+    query:
+      "EPA typical passenger vehicle emits 4.6 metric tons carbon dioxide per year",
     fetchedAt: null,
     status: "reference",
   },
@@ -67,7 +70,8 @@ export const OFFICIAL_SOURCE_DEFINITIONS: ValidationSource[] = [
     title: "EPA greenhouse gas equivalencies calculations and references",
     url: "https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references",
     domains: ["epa.gov", "www.epa.gov"],
-    query: "EPA greenhouse gas equivalencies 8887 grams CO2 per gallon gasoline 10180 grams CO2 per gallon diesel",
+    query:
+      "EPA greenhouse gas equivalencies 8887 grams CO2 per gallon gasoline 10180 grams CO2 per gallon diesel",
     fetchedAt: null,
     status: "reference",
   },
@@ -80,22 +84,15 @@ export const OFFICIAL_SOURCE_DEFINITIONS: ValidationSource[] = [
     fetchedAt: null,
     status: "reference",
   },
-  {
-    id: "abb-voyage-optimization",
-    title: "ABB Voyage Optimization API catalog",
-    url: "https://api.voyageoptimization.abb.com/",
-    domains: ["api.voyageoptimization.abb.com"],
-    query: "ABB Voyage Optimization Vessel Routing Weather Factor API",
-    fetchedAt: null,
-    status: "reference",
-  },
 ];
 
 function cloneReferenceSources(): ValidationSource[] {
   return OFFICIAL_SOURCE_DEFINITIONS.map((source) => ({ ...source }));
 }
 
-function mergeCachedSources(cache: ValidationSourcesResponse | null): ValidationSourcesResponse {
+function mergeCachedSources(
+  cache: ValidationSourcesResponse | null,
+): ValidationSourcesResponse {
   if (!cache) {
     return {
       configured: Boolean(process.env.FIRECRAWL_API_KEY),
@@ -104,7 +101,9 @@ function mergeCachedSources(cache: ValidationSourcesResponse | null): Validation
     };
   }
 
-  const cachedById = new Map(cache.sources.map((source) => [source.id, source]));
+  const cachedById = new Map(
+    cache.sources.map((source) => [source.id, source]),
+  );
   return {
     configured: Boolean(process.env.FIRECRAWL_API_KEY),
     refreshedAt: cache.refreshedAt,
@@ -119,7 +118,7 @@ function mergeCachedSources(cache: ValidationSourcesResponse | null): Validation
 
 function readCache(): ValidationSourcesResponse | null {
   try {
-    const raw = fs.readFileSync(CACHE_PATH, "utf8");
+    const raw = fs.readFileSync(cachePath(), "utf8");
     return JSON.parse(raw) as ValidationSourcesResponse;
   } catch {
     return null;
@@ -127,7 +126,7 @@ function readCache(): ValidationSourcesResponse | null {
 }
 
 function writeCache(payload: ValidationSourcesResponse): void {
-  fs.writeFileSync(CACHE_PATH, JSON.stringify(payload, null, 2), "utf8");
+  fs.writeFileSync(cachePath(), JSON.stringify(payload, null, 2), "utf8");
 }
 
 export function getValidationSources(): ValidationSourcesResponse {
@@ -147,7 +146,9 @@ interface FirecrawlSearchResponse {
   error?: string;
 }
 
-function extractFirecrawlWebResults(body: FirecrawlSearchResponse): FirecrawlSearchResult[] {
+function extractFirecrawlWebResults(
+  body: FirecrawlSearchResponse,
+): FirecrawlSearchResult[] {
   if (Array.isArray(body.data)) {
     return body.data;
   }
@@ -156,7 +157,7 @@ function extractFirecrawlWebResults(body: FirecrawlSearchResponse): FirecrawlSea
 }
 
 export async function refreshValidationSources(
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
 ): Promise<ValidationSourcesResponse> {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   const refreshedAt = new Date().toISOString();
@@ -180,6 +181,7 @@ export async function refreshValidationSources(
       try {
         const res = await fetchImpl(`${FIRECRAWL_API_URL}/v2/search`, {
           method: "POST",
+          signal: AbortSignal.timeout(15_000),
           headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
@@ -203,9 +205,16 @@ export async function refreshValidationSources(
 
         const body = (await res.json()) as FirecrawlSearchResponse;
         const results = extractFirecrawlWebResults(body);
-        const match = results.find((item) =>
-          source.domains.some((domain) => item.url?.includes(domain))
-        );
+        const match = results.find((item) => {
+          try {
+            const url = new URL(item.url ?? "");
+            return (
+              url.protocol === "https:" && source.domains.includes(url.hostname)
+            );
+          } catch {
+            return false;
+          }
+        });
 
         return {
           ...source,
@@ -224,7 +233,7 @@ export async function refreshValidationSources(
           error: err instanceof Error ? err.message : String(err),
         };
       }
-    })
+    }),
   );
 
   const response = { configured: true, refreshedAt, sources };

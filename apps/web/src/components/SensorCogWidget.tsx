@@ -6,7 +6,8 @@ function SparkArc({ data, color }: { data: number[]; color: string }) {
   const width = 96;
   const height = 26;
 
-  if (data.length < 2) return <svg width={width} height={height} aria-hidden="true" />;
+  if (data.length < 2)
+    return <svg width={width} height={height} aria-hidden="true" />;
 
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -20,7 +21,12 @@ function SparkArc({ data, color }: { data: number[]; color: string }) {
     .join(" ");
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      aria-hidden="true"
+    >
       <polyline
         points={points}
         fill="none"
@@ -38,10 +44,19 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function trendLabel(history: number[]) {
-  if (history.length < 2) return { label: "steady", className: "cog-widget__trend--flat" };
+  if (history.length < 2)
+    return { label: "steady", className: "cog-widget__trend--flat" };
   const delta = history[history.length - 1] - history[history.length - 2];
-  if (delta > 0.01) return { label: `up ${Math.abs(delta).toFixed(2)}`, className: "cog-widget__trend--up" };
-  if (delta < -0.01) return { label: `down ${Math.abs(delta).toFixed(2)}`, className: "cog-widget__trend--down" };
+  if (delta > 0.01)
+    return {
+      label: `up ${Math.abs(delta).toFixed(2)}`,
+      className: "cog-widget__trend--up",
+    };
+  if (delta < -0.01)
+    return {
+      label: `down ${Math.abs(delta).toFixed(2)}`,
+      className: "cog-widget__trend--down",
+    };
   return { label: "steady", className: "cog-widget__trend--flat" };
 }
 
@@ -74,28 +89,46 @@ export function SensorCogWidget({
   return (
     <div
       className={`cog-widget ${hasData ? "cog-widget--live" : "cog-widget--empty"}`}
-      style={{ "--accent": accentColor, "--level": `${level}%` } as React.CSSProperties}
+      style={
+        {
+          "--accent": accentColor,
+          "--level": `${level}%`,
+        } as React.CSSProperties
+      }
     >
-      <div className="cog-widget__gear" aria-label={`${label} ${hasData ? value.toFixed(precision) : "no data"}`}>
+      <div
+        className="cog-widget__gear"
+        aria-label={`${label}: ${hasData ? value.toFixed(precision) + " " + update.unit : "no data"}`}
+      >
         <div className="cog-widget__inner">
           <span className="cog-widget__mnemonic">{mnemonic}</span>
           {hasData ? (
             <>
-              <span className="cog-widget__value">{value.toFixed(precision)}</span>
+              <span className="cog-widget__value">
+                {value.toFixed(precision)}
+              </span>
               <span className="cog-widget__unit">{update.unit}</span>
             </>
           ) : (
-            <span className="cog-widget__waiting">NO SIGNAL</span>
+            <span className="cog-widget__waiting">—</span>
           )}
         </div>
       </div>
       <div className="cog-widget__caption">
         <span className="cog-widget__label">{label}</span>
-        {hasData && <span className={`cog-widget__trend ${trend.className}`}>{trend.label}</span>}
+        {hasData && (
+          <span className={`cog-widget__trend ${trend.className}`}>
+            {trend.label}
+          </span>
+        )}
       </div>
       <div className="cog-widget__footer">
         <SparkArc data={history} color={accentColor} />
-        {hasData && <span className="cog-widget__time">{new Date(update.timestamp).toLocaleTimeString()}</span>}
+        {hasData && (
+          <span className="cog-widget__time">
+            {new Date(update.timestamp).toLocaleTimeString()}
+          </span>
+        )}
       </div>
     </div>
   );

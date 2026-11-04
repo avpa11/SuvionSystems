@@ -1,11 +1,18 @@
-# Validation Agent Eval Fixtures
+# Agent evaluation cases
 
-These JSONL cases define the expected behavior for the optional OpenAI Agents SDK validation agent.
+[validation-agent-cases.jsonl](validation-agent-cases.jsonl) contains review cases
+for the optional text agent. Each line has an identifier, prompt, expected
+behavior, and forbidden outcomes. These are case definitions, not an executable
+evaluation harness or evidence that the model passes them.
 
-They are intentionally not wired into `npm test` because they should not call the OpenAI API in CI. Use them when running a credentialed local eval harness or when reviewing traces:
+Review for three behaviors:
 
-- The agent must use official-source lookup before making maritime source claims.
-- ABB checks are reasonableness checks, not regulatory truth.
-- Missing credentials must produce graceful unavailable/not-configured output.
-- Unsupported fuel types must not produce fabricated CO2 values.
-- The agent must not claim certified or guaranteed IMO compliance.
+- Look up reference sources before making source claims.
+- Reject unsupported fuel types without fabricating CO₂ values.
+- Avoid claims of certification or guaranteed regulatory compliance.
+
+The cases are not run by `npm test`. The automated suite checks local service and
+HTTP behavior without making paid provider calls. A credentialed evaluation
+harness would need to execute these prompts, inspect tools/output, and record
+results explicitly. Treat `expected` and `forbidden` entries as semantic review
+criteria, not a reliable substring matcher.

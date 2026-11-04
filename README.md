@@ -1,258 +1,172 @@
-# Suvion Systems — Environmental Monitoring Dashboard
+# Suvion Systems
 
-Maritime vessel sustainability tracking for small vessel operators. Provides real-time sensor
-data ingestion, automated CO₂ emissions calculations, and sustainability report generation.
+**A clearer picture of your vessel's environmental footprint.**
 
-## Architecture
+A simulation-first maritime monitoring dashboard for small-vessel operators.
+Watch fuel, water, generator, and navigation data arrive in real time, estimate
+fuel-derived CO₂, and export a sustainability summary as CSV or PDF.
 
-```
-simulation/nmea_generator.py   →  UDP :10110
-                                         ↓
-                               apps/api  (Node.js adapter + REST API)
-                               ├── NMEA UDP listener on :10110
-                               ├── Signal K WebSocket bridge (optional, explicit subscriptions)
-                               ├── @repo/emissions engine + 60 s cache
-                               ├── MongoDB persistence + 30-day retention
-                               ├── anomaly scheduler (optional)
-                               ├── Firecrawl / ABB / OpenAI validation surfaces
-                               ├── OpenAI realtime maritime agent proxy (optional)
-                               ├── OpenWeather lookup (optional)
-                               └── Socket.IO broadcast + REST APIs
-                                         ↓
-                               apps/web  (Next.js dashboard :4000)
-                               ├── Cog-style live vessel, environment, and navigation instruments
-                               ├── CO₂ emissions cog + fuel-type selector
-                               ├── weather panel with vessel/browser geolocation
-                               ├── OpenAI / Firecrawl / ABB integration panel
-                               ├── anomaly alert panel
-                               └── Date-range report builder → CSV / PDF download
-```
+Built as a BCIT Applied Computer Science capstone.
+Read the [BCIT project story](https://www.bcit.ca/news/stories/computing-capstone-project-maritime-sustainability/)
+for background. The guides below describe the software available in this repository.
 
-## Quick Start
+![Suvion Systems dashboard with synthetic vessel readings](docs/images/dashboard-desktop.png)
 
-### 1. Install dependencies
+[Quick start](#quick-start) · [User guide](docs/user-guide.md) ·
+[Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md) ·
+[Security](SECURITY.md) · [Release review](docs/release-readiness.md)
 
-```sh
-npm install
-```
+## What you can do
 
-### 2. Start MongoDB
+- Monitor live fuel flow, generator current, water usage, temperature, and CO₂.
+- Switch between vessel, environment, navigation, and electrical instruments.
+- See disconnected, waiting, and stale-feed states without mistaking missing readings for zero use.
+- Generate date-range reports with observation coverage, hourly trends, and downloadable CSV/PDF files.
+- Explore cruising, anchoring, and generator-cycling scenarios without boat hardware.
+- Optionally connect Signal K, Python anomaly detection, weather, or an AI assistant.
+  The core demo needs no external API keys.
+
+This is a **local research prototype**. Thresholds are illustrative operational
+targets, and fuel density is an engineering assumption. Reports do not certify
+regulatory compliance. Authentication, multi-vessel isolation, and real-world
+sensor validation are future work; see [deployment boundaries](SECURITY.md).
+
+## Quick start
+
+Install [Docker Desktop](https://docs.docker.com/desktop/) with Compose v2 and start
+its engine. From a clone of this repository:
 
 ```sh
-docker network create app_network
+# Only copy if you do not already have a .env file.
+cp -n .env.example .env
+docker compose up --build -d
+```
+
+Open [the dashboard](http://localhost:4000). The stack includes MongoDB, the API,
+the dashboard, and a simulator. Allow time for the first image build. Readings
+appear automatically once the API is healthy.
+
+```sh
+# Check startup and see the feed.
+docker compose ps
+docker compose logs --tail=50 api simulator
+
+# Change the synthetic vessel scenario.
+SIM_SCENARIO=anchoring docker compose up -d simulator
+
+# Stop the stack; recorded data stays in its Docker volume.
+docker compose down
+```
+
+Ports bind to loopback by default. No external Docker network creation is needed.
+Do not run a second host simulator while the Docker simulator is active.
+
+## Native development
+
+Requirements: Node **22+** (`nvm use` reads `.nvmrc`), npm **10+**, Python **3.10+**,
+and a local MongoDB **7** instance or Docker. The optional Signal K submodule is
+not required to install, test, or build Suvion.
+
+```sh
+npm ci
+# Only if .env does not exist:
+cp -n .env.example .env
+
 docker compose up -d mongo
+npm run build -w @repo/logger
+npm run build -w @repo/emissions
 ```
 
-### 3. Start the API server
+Run these in separate terminals from the repository root:
 
 ```sh
-# Development (hot-reload via tsx)
 npm run dev -w api
-
-# Production
-npm run build -w api && npm run start -w api
-```
-
-### 4. Start the dashboard
-
-```sh
 npm run dev -w web
+python3 simulation/nmea_generator.py --scenario cruising
 ```
 
-Open http://localhost:4000.
+Open [localhost:4000](http://localhost:4000). The API reads the root `.env` as a
+fallback; workspace-local settings and exported environment variables take
+precedence. The simulator uses the Python standard library only.
 
-### 5. Start Signal K server (optional)
+For a production-mode local run, use `npm run build`, then start `api` and `web`
+in separate terminals with `npm run start -w api` and `npm run start -w web`.
+MongoDB and a data source must also be running.
 
-The default development path sends the Python simulator directly to the API UDP listener.
-Signal K is optional and disabled unless `SIGNALK_ENABLED=true`.
+## How it works
 
-**Install once (global):**
+![Suvion architecture: simulator or Signal K into API, emissions, MongoDB, and dashboard](docs/images/architecture.svg)
+
+| Location              | Responsibility                                                              |
+| --------------------- | --------------------------------------------------------------------------- |
+| `apps/web`            | Next.js 15 / React 19 dashboard, Socket.IO client, report workflow          |
+| `apps/api`            | Express REST API, UDP ingestion, Signal K bridge, persistence and retention |
+| `packages/emissions`  | Pure TypeScript fuel factors, calculations, input-aware 60-second cache     |
+| `analytics`           | Standard-library Python anomaly model; optional `pymongo` connector         |
+| `simulation`          | Synthetic NMEA 0183 feed and vessel scenarios                               |
+| `infra`               | MongoDB collection validators and indexes                                   |
+| `apps/signalk-server` | Optional Apache-2.0 upstream submodule, excluded from core workspaces       |
+
+The [architecture review](docs/architecture.md) explains data flow, trust boundaries,
+tradeoffs, and the remaining work before a hosted or operational deployment.
+
+## Calculations and reporting
+
+```text
+CO₂ (kg) = fuel volume (L) × density (kg/L) × fuel-to-CO₂ factor (kg/kg)
+```
+
+Fuel and water rates (`L/h`) and CO₂ rates (`kg/h`) are integrated over elapsed
+sample intervals. A reading is held for at most five minutes by default; longer
+gaps are excluded and coverage is included in the report. This prevents a stopped
+simulator from generating a full day's apparent consumption.
+
+IMO mass-basis conversion factors and representative densities are documented in
+[the calculation references](docs/references.md). The per-litre factor is **not**
+a vessel's IMO CII rating. Historical CO₂ totals preserve the fuel setting used at
+ingestion. The report's `fuelType` parameter chooses a reference comparison; it
+does not rewrite stored emissions.
 
 ```sh
-npm install -g signalk-server
+curl 'http://localhost:4001/report?startDate=2026-11-03T00:00:00Z&endDate=2026-11-04T00:00:00Z&format=csv'
 ```
 
-**Start:**
+Use a period that actually contains your simulator data. API timestamps require
+an explicit timezone; ranges are limited to 31 days. See the
+[API guide](docs/api.md) and [user guide](docs/user-guide.md).
+
+## Verification
 
 ```sh
-signalk-server
-# Starts on http://localhost:3000 — admin UI available at http://localhost:3000/admin
-```
+npm run check
+npm audit --omit=dev
 
-**Enable the API bridge:**
-
-```sh
-SIGNALK_ENABLED=true \
-SIGNALK_URL=ws://localhost:3000/signalk/v1/stream \
-npm run dev -w api
-```
-
-The API rewrites the stream URL to `subscribe=none` and sends explicit own-vessel
-subscriptions. `tanks.freshWater.0.currentLevel` is rendered as tank level, not water usage.
-
-### 6. Run the NMEA simulator
-
-```sh
-# Cruising (default) — fuel 12.5 L/h, generator 8.2 A, SOG about 8.6 kn
-python3 simulation/nmea_generator.py
-
-# Vessel at anchor — low fuel, high generator load
-python3 simulation/nmea_generator.py --scenario anchoring
-
-# Generator cycling — triggers non-compliant period detection
-python3 simulation/nmea_generator.py --scenario generator_cycling
-
-# Run for a fixed duration (seconds)
-python3 simulation/nmea_generator.py --duration 86400
-```
-
-The simulator also emits environment and tank streams over NMEA XDR:
-`DEPTH_KEEL`, `DEPTH_TRANSDUCER`, `WATER_TEMP`, and `WATER_LEVEL`.
-Those drive the DBK, DBT, WTMP, and water tank dashboard instruments.
-
-### 7. Full Docker stack
-
-```sh
-docker network create app_network
-COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1 docker compose build
-docker compose up -d
-```
-
-The API publishes UDP `10110`, so the host-run simulator can feed the Docker stack:
-
-```sh
-python3 simulation/nmea_generator.py
-```
-
-OpenAI validation and realtime voice sessions are enabled when `OPENAI_API_KEY` is set.
-Set `VALIDATION_AGENT_ENABLED=false` or `REALTIME_AGENT_ENABLED=false` in `.env` only
-when you want to turn those integrations off.
-
-Signal K is optional in Docker too. To include it, opt into the profile and enable
-the API bridge. The Compose service defaults to the official
-`cr.signalk.io/signalk/signalk-server` image, with `SIGNALK_IMAGE` available as an
-override.
-
-```sh
-SIGNALK_ENABLED=true \
-SIGNALK_URL=ws://signalk:3000/signalk/v1/stream \
-docker compose --profile signalk up -d
-```
-
-If the Signal K image pull fails, you can still run the core stack and point the API
-at the public demo stream:
-
-```sh
-SIGNALK_ENABLED=true \
-SIGNALK_URL=wss://demo.signalk.org/signalk/v1/stream \
-docker compose up -d api
-```
-
-## Package overview
-
-| Package | Description |
-|---------|-------------|
-| `apps/api` | Express + Socket.IO adapter, MongoDB persistence, reports, validation, status, anomalies |
-| `apps/web` | Next.js 14 SPA dashboard |
-| `packages/emissions` | Stateless CO₂ engine — IMO CII method and conversion-factor references, 60 s cache |
-| `simulation/` | Python NMEA0183 generator (three vessel-state scenarios) |
-
-## Module system
-
-Both `packages/emissions` and `apps/api` are true ESM packages (`"type": "module"`).
-TypeScript is configured with `"module": "NodeNext"` and `"moduleResolution": "NodeNext"`,
-so all relative imports use explicit `.js` extensions (resolved to `.ts` at compile time).
-
-Some older packages (`ajv`, `ajv-formats`) ship CJS types that lose call-signature
-information under NodeNext ESM resolution. These are handled with a one-line cast at the
-import site, documented with a comment so the reason is clear.
-
-## Report API
-
-```
-GET /report?startDate=<ISO8601>&endDate=<ISO8601>[&format=csv|pdf][&fuelType=diesel]
-```
-
-Returns a JSON payload validated against `apps/api/src/schemas/report-schema.ts`
-(12 required fields). Append `&format=csv` or `&format=pdf` for file downloads.
-
-Response logs are written to `reporting-api.log`; responses exceeding 5 s are
-flagged `SLOW_REPORT`.
-
-Rate readings are integrated over elapsed sample intervals. Fuel and water are treated as
-`L/h`; CO₂ is treated as `kg/h`. The report includes `calculationBasis` and
-`validationSources` metadata.
-
-## Status, validation, and anomaly APIs
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /status` | NMEA, Signal K, MongoDB, and anomaly scheduler status |
-| `GET /validation/sources` | Cached official-source metadata |
-| `POST /validation/sources/refresh` | Firecrawl refresh restricted to official domains |
-| `GET /validation/abb/health` | ABB OAuth/health status |
-| `POST /validation/abb/route-check` | ABB route reasonableness check |
-| `GET /validation/agent/status` | OpenAI validation agent configuration/status |
-| `POST /validation/agent` | Optional OpenAI Agents SDK validation run |
-| `GET /validation/realtime/status` | Realtime maritime agent configuration/status |
-| `GET /validation/realtime/session-config` | SDK-derived realtime session config metadata |
-| `POST /validation/realtime/calls` | WebRTC SDP proxy for browser voice sessions |
-| `GET /weather/current?lat=<lat>&lon=<lon>` | OpenWeather lookup from vessel or browser position |
-| `GET /anomalies` | Recent anomaly events |
-
-See [docs/integrations.md](docs/integrations.md) and
-[docs/signalk-architecture.md](docs/signalk-architecture.md).
-
-## Runtime smoke test
-
-After MongoDB, the API, and the web app are running:
-
-```sh
+# With the local stack and simulator running:
 npm run smoke:runtime
+npx playwright install chromium
+npm run test:browser
 ```
 
-This checks MongoDB, API health/status, report generation, validation-source metadata,
-ABB graceful-response behavior, anomaly endpoint availability, and the dashboard.
+Tests include pure emissions calculations, parser and unit-conversion regressions,
+missing-data integration, HTTP boundaries, and a temporary MongoDB database. The
+first integration run may download a MongoDB binary. Python tests need no third-party
+packages. See [release verification](docs/release-readiness.md) for measured results
+and remaining limitations.
 
-See [docs/integration-testing.md](docs/integration-testing.md) for the full Week 10-11
-verification sequence.
+## Optional integrations
 
-## Running tests
+All configuration is described in [.env.example](.env.example). Keep server keys
+out of `NEXT_PUBLIC_*` variables. Weather is requested explicitly from the dashboard;
+AI text/voice requires a key and an explicit enable flag. Enabling external services
+can send vessel context or coordinates to their providers.
 
-```sh
-# Emissions unit tests — 120 scenarios, all ≤0.5 % error vs IMO reference factors
-npm test -w @repo/emissions
+See [the integration guide](docs/integrations.md), [Signal K notes](docs/signalk-architecture.md),
+and [the security policy](SECURITY.md) before enabling them.
 
-# Reporting API integration tests (uses mongodb-memory-server, no real DB needed)
-npm test -w api
+## License and acknowledgments
 
-# Python anomaly tests
-python3 -m unittest discover analytics
-```
-
-Both test suites run with `NODE_OPTIONS='--experimental-vm-modules'` for ESM support.
-
-## Emissions calculation
-
-```
-CO₂ (kg) = consumption (L) × density (kg/L) × Cf (kg CO₂/kg fuel)
-```
-
-Reference: IMO MEPC.352(78) for the CII calculation method; MEPC.308(73), as amended,
-and MEPC.364(79) for fuel-to-CO₂ conversion-factor references. Fuel densities are
-representative engineering assumptions and documented separately from IMO factors.
-
-| Fuel | Cf | Density |
-|------|----|---------|
-| Diesel | 3.206 | 0.840 kg/L |
-| MGO | 3.206 | 0.875 kg/L |
-| MDO | 3.206 | 0.875 kg/L |
-| HFO | 3.114 | 0.991 kg/L |
-| LNG | 2.750 | 0.450 kg/L |
-
-## Data governance
-
-- Sensor and emissions documents older than 30 days are deleted daily by the
-  retention scheduler in `apps/api/src/db/retention.ts`.
-- Every deletion is logged to `data-lifecycle.log` with timestamp and count.
-- A post-demo full wipe is available via the exported `runDataWipe()` function.
+Original Suvion code is available under the [MIT license](LICENSE).
+[Signal K](https://signalk.org/) and other dependencies retain their own licenses;
+see [third-party notices](THIRD_PARTY_NOTICES.md). BCIT, IMO, and EPA references do
+not imply endorsement. The [documentation index](docs/README.md) covers setup,
+usage, architecture, and maintenance of the current implementation.

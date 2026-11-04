@@ -12,10 +12,13 @@ db.createCollection("sensorreadings", {
       bsonType: "object",
       required: ["stream", "value", "unit", "timestamp"],
       properties: {
-        _id:       { bsonType: "objectId" },
-        stream:    { bsonType: "string", enum: ["fuel", "generator", "water", "temperature"] },
-        value:     { bsonType: "double" },
-        unit:      { bsonType: "string" },
+        _id: { bsonType: "objectId" },
+        stream: {
+          bsonType: "string",
+          enum: ["fuel", "generator", "water", "temperature"],
+        },
+        value: { bsonType: ["double", "int", "long", "decimal"] },
+        unit: { bsonType: "string" },
         timestamp: { bsonType: "date" },
       },
       additionalProperties: false,
@@ -32,15 +35,17 @@ db.createCollection("emissionsreadings", {
       bsonType: "object",
       required: ["fuelType", "consumptionL", "co2Kg", "cacheHit", "timestamp"],
       properties: {
-        _id:                   { bsonType: "objectId" },
-        fuelType:              { bsonType: "string" },
-        fuelRateLh:            { bsonType: ["double", "int", "long", "decimal", "null"] },
-        co2RateKgh:            { bsonType: ["double", "int", "long", "decimal", "null"] },
-        sampleIntervalSeconds: { bsonType: ["double", "int", "long", "decimal", "null"] },
-        consumptionL:          { bsonType: "double" },
-        co2Kg:                 { bsonType: "double" },
-        cacheHit:              { bsonType: "bool" },
-        timestamp:             { bsonType: "date" },
+        _id: { bsonType: "objectId" },
+        fuelType: { bsonType: "string" },
+        fuelRateLh: { bsonType: ["double", "int", "long", "decimal", "null"] },
+        co2RateKgh: { bsonType: ["double", "int", "long", "decimal", "null"] },
+        sampleIntervalSeconds: {
+          bsonType: ["double", "int", "long", "decimal", "null"],
+        },
+        consumptionL: { bsonType: ["double", "int", "long", "decimal"] },
+        co2Kg: { bsonType: ["double", "int", "long", "decimal"] },
+        cacheHit: { bsonType: "bool" },
+        timestamp: { bsonType: "date" },
       },
       additionalProperties: false,
     },
@@ -53,16 +58,23 @@ db.createCollection("anomalyevents", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["timestamp", "score", "isAnomaly", "features", "source", "createdAt"],
+      required: [
+        "timestamp",
+        "score",
+        "isAnomaly",
+        "features",
+        "source",
+        "createdAt",
+      ],
       properties: {
-        _id:          { bsonType: "objectId" },
-        timestamp:    { bsonType: "date" },
-        score:        { bsonType: ["double", "int", "long", "decimal"] },
-        isAnomaly:    { bsonType: "bool" },
-        features:     { bsonType: "object" },
+        _id: { bsonType: "objectId" },
+        timestamp: { bsonType: "date" },
+        score: { bsonType: ["double", "int", "long", "decimal"] },
+        isAnomaly: { bsonType: "bool" },
+        features: { bsonType: "object" },
         contributing: { bsonType: "array", items: { bsonType: "string" } },
-        source:       { bsonType: "string" },
-        createdAt:    { bsonType: "date" },
+        source: { bsonType: "string" },
+        createdAt: { bsonType: "date" },
       },
       additionalProperties: false,
     },
@@ -73,4 +85,6 @@ db.anomalyevents.createIndex({ timestamp: -1, score: -1 });
 
 db.createCollection("lifecyclelogs");
 
-print("Suvion MongoDB initialized: collections sensorreadings, emissionsreadings, anomalyevents, lifecyclelogs");
+print(
+  "Suvion MongoDB initialized: collections sensorreadings, emissionsreadings, anomalyevents, lifecyclelogs",
+);

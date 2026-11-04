@@ -1,76 +1,74 @@
 services:
   mongo:
     image: mongo:7
-    container_name: mongo
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
       - ./infra/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
-    networks:
-      - app_network
+    healthcheck:
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   signalk:
     image: ${SIGNALK_IMAGE:-cr.signalk.io/signalk/signalk-server:latest}
-    container_name: signalk
-    profiles:
-      - signalk
+    profiles: [signalk]
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - signalk_data:/home/node/.signalk
-    environment:
-      - SIGNALK_DISABLE_SECURITY=true
-    networks:
-      - app_network
 
   api:
-    container_name: api
     build:
       context: .
       dockerfile: ./apps/api/Dockerfile
     restart: unless-stopped
     ports:
-      - "4001:4001"
-      - "10110:10110/udp"
+      - "127.0.0.1:4001:4001"
+      - "127.0.0.1:10110:10110/udp"
     environment:
-      - PORT=4001
-      - MONGO_URI=mongodb://mongo:27017/suvion
-      - SIGNALK_ENABLED=${SIGNALK_ENABLED:-false}
-      - SIGNALK_URL=${SIGNALK_URL:-ws://signalk:3000/signalk/v1/stream}
-      - NMEA_PORT=10110
-      - DEFAULT_FUEL_TYPE=diesel
-      - VESSEL_ID=DEMO-VESSEL-001
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - VALIDATION_AGENT_ENABLED=${VALIDATION_AGENT_ENABLED:-true}
-      - REALTIME_AGENT_ENABLED=${REALTIME_AGENT_ENABLED:-true}
-      - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL:-}
-      - OPENAI_REALTIME_VOICE=${OPENAI_REALTIME_VOICE:-}
-      - OPENAI_REALTIME_CALLS_URL=${OPENAI_REALTIME_CALLS_URL:-}
-      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
-      - OPENWEATHER_BASE_URL=${OPENWEATHER_BASE_URL:-}
-      - ABB_TOKEN_URL=${ABB_TOKEN_URL:-}
-      - ABB_CLIENT_ID=${ABB_CLIENT_ID:-}
-      - ABB_CLIENT_SECRET=${ABB_CLIENT_SECRET:-}
-      - ABB_OAUTH_SCOPE=${ABB_OAUTH_SCOPE:-}
-      - ABB_BASE_URL=${ABB_BASE_URL:-}
-      - ABB_WS_URL=${ABB_WS_URL:-}
-      - ABB_HEALTH_URL=${ABB_HEALTH_URL:-}
-      - ABB_ROUTE_CHECK_ENDPOINT=${ABB_ROUTE_CHECK_ENDPOINT:-}
-      - ANOMALY_DETECTION_ENABLED=${ANOMALY_DETECTION_ENABLED:-false}
-      - ANOMALY_LOOKBACK_MINUTES=${ANOMALY_LOOKBACK_MINUTES:-1440}
-      - ANOMALY_INTERVAL_MS=${ANOMALY_INTERVAL_MS:-300000}
+      HOST: 0.0.0.0
+      PORT: 4001
+      MONGO_URI: mongodb://mongo:27017/suvion
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4000,http://127.0.0.1:4000}
+      NMEA_HOST: 0.0.0.0
+      NMEA_PORT: 10110
+      DEFAULT_FUEL_TYPE: ${DEFAULT_FUEL_TYPE:-diesel}
+      VESSEL_ID: ${VESSEL_ID:-DEMO-VESSEL-001}
+      SIGNALK_ENABLED: ${SIGNALK_ENABLED:-false}
+      SIGNALK_URL: ${SIGNALK_URL:-ws://signalk:3000/signalk/v1/stream}
+      REPORT_MAX_SAMPLE_AGE_SECONDS: ${REPORT_MAX_SAMPLE_AGE_SECONDS:-300}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      VALIDATION_AGENT_ENABLED: ${VALIDATION_AGENT_ENABLED:-false}
+      REALTIME_AGENT_ENABLED: ${REALTIME_AGENT_ENABLED:-false}
+      OPENAI_REALTIME_MODEL: ${OPENAI_REALTIME_MODEL:-}
+      OPENAI_REALTIME_VOICE: ${OPENAI_REALTIME_VOICE:-}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+      ANOMALY_DETECTION_ENABLED: ${ANOMALY_DETECTION_ENABLED:-false}
+      ANOMALY_LOOKBACK_MINUTES: ${ANOMALY_LOOKBACK_MINUTES:-1440}
+      ANOMALY_INTERVAL_MS: ${ANOMALY_INTERVAL_MS:-300000}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4001/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     depends_on:
-      - mongo
-    networks:
-      - app_network
+      mongo:
+        condition: service_healthy
 
   web:
-    container_name: web
     build:
       context: .
       dockerfile: ./apps/web/Dockerfile
@@ -78,18 +76,33 @@ services:
         NEXT_PUBLIC_API_HOST: ${NEXT_PUBLIC_API_HOST:-http://localhost:4001}
     restart: unless-stopped
     ports:
-      - "4000:4000"
-    environment:
-      - NEXT_PUBLIC_API_HOST=${NEXT_PUBLIC_API_HOST:-http://localhost:4001}
+      - "127.0.0.1:4000:4000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     depends_on:
-      - api
-    networks:
-      - app_network
+      api:
+        condition: service_healthy
+
+  simulator:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /sim
+    volumes:
+      - ./simulation:/sim:ro
+    command: python -u nmea_generator.py --host api --port 10110 --scenario ${SIM_SCENARIO:-cruising}
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   mongo_data:
   signalk_data:
-
-networks:
-  app_network:
-    external: true

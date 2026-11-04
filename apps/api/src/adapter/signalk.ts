@@ -2,9 +2,9 @@ import { log } from "@repo/logger";
 import type { SensorReading as SensorReadingType } from "../types.js";
 import type { WebSocket as WsType } from "ws";
 
-const R2D = 180 / Math.PI;     // radians → degrees
-const K2C = (v: number) => v - 273.15;       // Kelvin → Celsius
-const MPS2KN = (v: number) => v * 1.94384;   // m/s → knots
+const R2D = 180 / Math.PI; // radians → degrees
+const K2C = (v: number) => v - 273.15; // Kelvin → Celsius
+const MPS2KN = (v: number) => v * 1.94384; // m/s → knots
 
 function boolEnv(name: string, defaultValue = false): boolean {
   const value = process.env[name];
@@ -13,7 +13,8 @@ function boolEnv(name: string, defaultValue = false): boolean {
 }
 
 export function resolveSignalKUrl(): string {
-  const configured = process.env.SIGNALK_URL ?? "ws://localhost:3000/signalk/v1/stream";
+  const configured =
+    process.env.SIGNALK_URL ?? "ws://localhost:3000/signalk/v1/stream";
   const url = new URL(configured);
   url.searchParams.set("subscribe", "none");
   return url.toString();
@@ -37,41 +38,121 @@ interface PathEntry {
 /** Signal K path → internal stream mapping. */
 const PATH_MAP: Record<string, PathEntry> = {
   // ── Vessel sensors ────────────────────────────────────────────────────
-  "propulsion.0.fuel.rate":                          { stream: "fuel",          unit: "L/h",   transform: (v) => v * 3600 },
-  "electrical.generators.0.current.value":           { stream: "generator",     unit: "A" },
-  "tanks.freshWater.0.currentLevel":                 { stream: "waterLevel",    unit: "%",     transform: (v) => v * 100 },
-  "environment.outside.temperature":                 { stream: "temperature",   unit: "°C",    transform: K2C },
+  "propulsion.0.fuel.rate": {
+    stream: "fuel",
+    unit: "L/h",
+    transform: (v) => v * 3_600_000,
+  },
+  "electrical.generators.0.current.value": { stream: "generator", unit: "A" },
+  "tanks.freshWater.0.currentLevel": {
+    stream: "waterLevel",
+    unit: "%",
+    transform: (v) => v * 100,
+  },
+  "environment.outside.temperature": {
+    stream: "temperature",
+    unit: "°C",
+    transform: K2C,
+  },
 
   // ── Navigation ────────────────────────────────────────────────────────
-  "navigation.headingTrue":                          { stream: "heading",       unit: "°",     transform: (v) => v * R2D },
-  "navigation.courseOverGroundTrue":                 { stream: "cog",           unit: "°",     transform: (v) => v * R2D },
-  "navigation.speedOverGround":                      { stream: "sog",           unit: "kn",    transform: MPS2KN },
-  "navigation.speedThroughWater":                    { stream: "stw",           unit: "kn",    transform: MPS2KN },
-  "navigation.magneticVariation":                    { stream: "magVariation",  unit: "°",     transform: (v) => v * R2D },
-  "navigation.log":                                  { stream: "navLog",        unit: "nmi",   transform: (v) => v / 1852 },
-  "navigation.trip.log":                             { stream: "tripLog",       unit: "nmi",   transform: (v) => v / 1852 },
-  "navigation.speedThroughWaterReferenceType":       { stream: "stwRefType",    unit: "" },
+  "navigation.headingTrue": {
+    stream: "heading",
+    unit: "°T",
+    transform: (v) => v * R2D,
+  },
+  "navigation.courseOverGroundTrue": {
+    stream: "cog",
+    unit: "°",
+    transform: (v) => v * R2D,
+  },
+  "navigation.speedOverGround": {
+    stream: "sog",
+    unit: "kn",
+    transform: MPS2KN,
+  },
+  "navigation.speedThroughWater": {
+    stream: "stw",
+    unit: "kn",
+    transform: MPS2KN,
+  },
+  "navigation.magneticVariation": {
+    stream: "magVariation",
+    unit: "°",
+    transform: (v) => v * R2D,
+  },
+  "navigation.log": {
+    stream: "navLog",
+    unit: "nmi",
+    transform: (v) => v / 1852,
+  },
+  "navigation.trip.log": {
+    stream: "tripLog",
+    unit: "nmi",
+    transform: (v) => v / 1852,
+  },
+  "navigation.speedThroughWaterReferenceType": {
+    stream: "stwRefType",
+    unit: "",
+  },
 
   // ── GNSS ──────────────────────────────────────────────────────────────
-  "navigation.gnss.satellites":                      { stream: "gnssSatellites",  unit: "" },
-  "navigation.gnss.horizontalDilution":              { stream: "gnssDilution",    unit: "" },
-  "navigation.gnss.antennaAltitude":                 { stream: "gnssAltitude",    unit: "m" },
+  "navigation.gnss.satellites": { stream: "gnssSatellites", unit: "" },
+  "navigation.gnss.horizontalDilution": { stream: "gnssDilution", unit: "" },
+  "navigation.gnss.antennaAltitude": { stream: "gnssAltitude", unit: "m" },
 
   // ── Wind ──────────────────────────────────────────────────────────────
-  "environment.wind.angleApparent":                  { stream: "windAngle",     unit: "°",     transform: (v) => v * R2D },
-  "environment.wind.speedApparent":                  { stream: "windSpeed",     unit: "m/s" },
+  "environment.wind.angleApparent": {
+    stream: "windAngle",
+    unit: "°",
+    transform: (v) => v * R2D,
+  },
+  "environment.wind.speedApparent": { stream: "windSpeed", unit: "m/s" },
 
   // ── Environment ───────────────────────────────────────────────────────
-  "environment.depth.belowKeel":                     { stream: "depthBelowKeel",        unit: "m" },
-  "environment.depth.belowTransducer":               { stream: "depthBelowTransducer",  unit: "m" },
-  "environment.water.temperature":                   { stream: "waterTemp",     unit: "°C",    transform: K2C },
+  "environment.depth.belowKeel": { stream: "depthBelowKeel", unit: "m" },
+  "environment.depth.belowTransducer": {
+    stream: "depthBelowTransducer",
+    unit: "m",
+  },
+  "environment.water.temperature": {
+    stream: "waterTemp",
+    unit: "°C",
+    transform: K2C,
+  },
 
   // ── Electrical / Battery ─────────────────────────────────────────────
-  "electrical.batteries.1.voltage":                  { stream: "battVoltage",         unit: "V" },
-  "electrical.batteries.1.current":                  { stream: "battCurrent",         unit: "A" },
-  "electrical.batteries.1.temperature":              { stream: "battTemp",            unit: "°C",   transform: K2C },
-  "electrical.batteries.1.capacity.timeRemaining":   { stream: "battTimeRemaining",   unit: "h",    transform: (v) => v / 3600 },
+  "electrical.batteries.1.voltage": { stream: "battVoltage", unit: "V" },
+  "electrical.batteries.1.current": { stream: "battCurrent", unit: "A" },
+  "electrical.batteries.1.temperature": {
+    stream: "battTemp",
+    unit: "°C",
+    transform: K2C,
+  },
+  "electrical.batteries.1.capacity.timeRemaining": {
+    stream: "battTimeRemaining",
+    unit: "h",
+    transform: (v) => v / 3600,
+  },
 };
+
+/** Signal K fuel volume rate is m³/s; internal rates use L/h. */
+export function translateSignalKValue(
+  path: string,
+  value: unknown,
+): SensorReadingType | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const mapping = PATH_MAP[path];
+  if (!mapping) return null;
+  const result = mapping.transform ? mapping.transform(value) : value;
+  if (!Number.isFinite(result)) return null;
+  return {
+    stream: mapping.stream,
+    value: result,
+    unit: mapping.unit,
+    timestamp: new Date(),
+  };
+}
 
 type OnReadingFn = (r: SensorReadingType) => void;
 
@@ -84,6 +165,7 @@ type OnReadingFn = (r: SensorReadingType) => void;
  */
 export function startSignalKAdapter(onReading: OnReadingFn): () => void {
   let ws: WsType | null = null;
+  let stopped = false;
 
   if (!boolEnv("SIGNALK_ENABLED")) {
     log("Signal K adapter disabled; set SIGNALK_ENABLED=true to enable");
@@ -94,6 +176,7 @@ export function startSignalKAdapter(onReading: OnReadingFn): () => void {
 
   import("ws")
     .then(({ default: WebSocket }) => {
+      if (stopped) return;
       ws = new WebSocket(signalKUrl);
       let connected = false;
 
@@ -111,7 +194,7 @@ export function startSignalKAdapter(onReading: OnReadingFn): () => void {
                 policy: "instant",
                 format: "delta",
               })),
-          })
+          }),
         );
       });
 
@@ -126,6 +209,8 @@ export function startSignalKAdapter(onReading: OnReadingFn): () => void {
           return;
         }
 
+        if (!msg || typeof msg !== "object") return;
+
         // Hello message — capture self URN and skip further processing
         const helloSelf = (msg as { self?: string }).self;
         if (helloSelf) {
@@ -134,43 +219,61 @@ export function startSignalKAdapter(onReading: OnReadingFn): () => void {
           return;
         }
 
-        const updates = (msg as { updates?: unknown[]; context?: string }).updates;
+        const updates = (msg as { updates?: unknown[]; context?: string })
+          .updates;
         if (!Array.isArray(updates)) return;
 
         // Only process own-vessel data; ignore AIS targets
         const context = (msg as { context?: string }).context;
-        if (context && context !== "vessels.self" && context !== selfUrn) return;
+        if (context && context !== "vessels.self" && context !== selfUrn)
+          return;
 
         for (const update of updates) {
-          const values = (update as { values?: { path: string; value: unknown }[] }).values;
+          if (!update || typeof update !== "object") continue;
+          const values = (
+            update as { values?: { path: string; value: unknown }[] }
+          ).values;
           if (!Array.isArray(values)) continue;
 
-          for (const { path, value } of values) {
+          for (const item of values) {
+            if (!item || typeof item !== "object") continue;
+            const { path, value } = item;
             // ── position is a {latitude, longitude} object ──────────────
             if (path === "navigation.position") {
-              const pos = value as { latitude?: number; longitude?: number } | null;
+              const pos = value as {
+                latitude?: number;
+                longitude?: number;
+              } | null;
               const now = new Date();
-              if (typeof pos?.latitude === "number") {
-                onReading({ stream: "positionLat", value: pos.latitude, unit: "°", timestamp: now });
+              if (
+                typeof pos?.latitude === "number" &&
+                Number.isFinite(pos.latitude) &&
+                Math.abs(pos.latitude) <= 90
+              ) {
+                onReading({
+                  stream: "positionLat",
+                  value: pos.latitude,
+                  unit: "°",
+                  timestamp: now,
+                });
               }
-              if (typeof pos?.longitude === "number") {
-                onReading({ stream: "positionLon", value: pos.longitude, unit: "°", timestamp: now });
+              if (
+                typeof pos?.longitude === "number" &&
+                Number.isFinite(pos.longitude) &&
+                Math.abs(pos.longitude) <= 180
+              ) {
+                onReading({
+                  stream: "positionLon",
+                  value: pos.longitude,
+                  unit: "°",
+                  timestamp: now,
+                });
               }
               continue;
             }
 
-            if (typeof value !== "number") continue;
-
-            const mapping = PATH_MAP[path];
-            if (!mapping) continue;
-
-            const result = mapping.transform ? mapping.transform(value) : value;
-            onReading({
-              stream: mapping.stream,
-              value: result,
-              unit: mapping.unit,
-              timestamp: new Date(),
-            });
+            const reading = translateSignalKValue(path, value);
+            if (reading) onReading(reading);
           }
         }
       });
@@ -183,10 +286,13 @@ export function startSignalKAdapter(onReading: OnReadingFn): () => void {
       });
     })
     .catch(() => {
-      log("ws package not available — Signal K adapter disabled; using NMEA fallback");
+      log(
+        "ws package not available — Signal K adapter disabled; using NMEA fallback",
+      );
     });
 
   return () => {
+    stopped = true;
     if (ws) ws.close();
   };
 }

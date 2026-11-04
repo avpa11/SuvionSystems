@@ -37,9 +37,19 @@ interface OpenWeatherResponse {
   message?: string;
 }
 
-function finiteCoordinate(value: unknown, min: number, max: number): number | null {
+function finiteCoordinate(
+  value: unknown,
+  min: number,
+  max: number,
+): number | null {
+  if (
+    typeof value !== "number" &&
+    (typeof value !== "string" || value.trim() === "")
+  )
+    return null;
   const numberValue = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numberValue) || numberValue < min || numberValue > max) return null;
+  if (!Number.isFinite(numberValue) || numberValue < min || numberValue > max)
+    return null;
   return numberValue;
 }
 
@@ -54,7 +64,10 @@ export function getWeatherCapability() {
   };
 }
 
-export async function getCurrentWeather(latInput: unknown, lonInput: unknown): Promise<WeatherStatus> {
+export async function getCurrentWeather(
+  latInput: unknown,
+  lonInput: unknown,
+): Promise<WeatherStatus> {
   const lat = finiteCoordinate(latInput, -90, 90);
   const lon = finiteCoordinate(lonInput, -180, 180);
 
@@ -77,7 +90,9 @@ export async function getCurrentWeather(latInput: unknown, lonInput: unknown): P
     };
   }
 
-  const baseUrl = process.env.OPENWEATHER_BASE_URL || "https://api.openweathermap.org/data/2.5/weather";
+  const baseUrl =
+    process.env.OPENWEATHER_BASE_URL ||
+    "https://api.openweathermap.org/data/2.5/weather";
   const url = new URL(baseUrl);
   url.searchParams.set("lat", String(lat));
   url.searchParams.set("lon", String(lon));
@@ -85,7 +100,7 @@ export async function getCurrentWeather(latInput: unknown, lonInput: unknown): P
   url.searchParams.set("units", "metric");
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     const payload = (await response.json()) as OpenWeatherResponse;
 
     if (!response.ok) {
@@ -94,11 +109,14 @@ export async function getCurrentWeather(latInput: unknown, lonInput: unknown): P
         status: "error",
         source: "OpenWeather",
         location: { lat, lon },
-        message: payload.message ?? `OpenWeather request failed with HTTP ${response.status}.`,
+        message:
+          payload.message ??
+          `OpenWeather request failed with HTTP ${response.status}.`,
       };
     }
 
-    const condition = payload.weather?.[0]?.description ?? payload.weather?.[0]?.main ?? null;
+    const condition =
+      payload.weather?.[0]?.description ?? payload.weather?.[0]?.main ?? null;
 
     return {
       configured: true,
@@ -114,7 +132,9 @@ export async function getCurrentWeather(latInput: unknown, lonInput: unknown): P
         windDirectionDeg: nullableNumber(payload.wind?.deg),
         visibilityM: nullableNumber(payload.visibility),
         condition,
-        observedAt: payload.dt ? new Date(payload.dt * 1000).toISOString() : null,
+        observedAt: payload.dt
+          ? new Date(payload.dt * 1000).toISOString()
+          : null,
       },
     };
   } catch (err) {

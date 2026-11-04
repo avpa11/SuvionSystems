@@ -1,5 +1,12 @@
-import { DEFAULT_OPENAI_REALTIME_MODEL, RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
-import { formatVesselContextForAgent, getVesselContext } from "./vesselContext.js";
+import {
+  DEFAULT_OPENAI_REALTIME_MODEL,
+  RealtimeAgent,
+  RealtimeSession,
+} from "@openai/agents/realtime";
+import {
+  formatVesselContextForAgent,
+  getVesselContext,
+} from "./vesselContext.js";
 
 export interface RealtimeAgentStatus {
   configured: boolean;
@@ -55,30 +62,35 @@ function realtimeVoice(): string {
 }
 
 function realtimeEnabled(): boolean {
-  return process.env.REALTIME_AGENT_ENABLED !== "false";
+  return process.env.REALTIME_AGENT_ENABLED === "true";
 }
 
-export function getMaritimeRealtimeInstructions(vesselContext?: string): string {
+export function getMaritimeRealtimeInstructions(
+  vesselContext?: string,
+): string {
   const instructions = [
     "You are Suvion's realtime maritime operations agent.",
     "You help with CO2 emissions reasoning, vessel operations, route planning, navigation, weather, and sensor interpretation.",
     "You have backend vessel context for the current voice session. Use it to answer questions about live signals, position, depth, wind, fuel, generator, water, tank, electrical, and CO2 emissions.",
     "If a value is marked stale or unavailable, say that clearly and ask for a fresh signal before making navigation, route, or emissions recommendations that depend on it.",
     "Use local Suvion calculations as deterministic in-app estimates. Do not claim class society approval, IMO certification, or legal compliance.",
-    "Treat ABB route/weather optimization as a reasonableness check only when comparable inputs exist.",
     "Treat Firecrawl and official-source validation as source evidence, not as proof of certification.",
     "When navigation or weather context is missing, say what input is needed before making a recommendation.",
     "Keep voice responses concise and operationally clear.",
   ];
 
   if (vesselContext) {
-    instructions.push(["Current backend vessel context:", vesselContext].join("\n"));
+    instructions.push(
+      ["Current backend vessel context:", vesselContext].join("\n"),
+    );
   }
 
   return instructions.join("\n");
 }
 
-export function createMaritimeRealtimeAgent(vesselContext?: string): RealtimeAgent {
+export function createMaritimeRealtimeAgent(
+  vesselContext?: string,
+): RealtimeAgent {
   return new RealtimeAgent({
     name: "Suvion Maritime Realtime Agent",
     instructions: getMaritimeRealtimeInstructions(vesselContext),
@@ -109,7 +121,8 @@ export function getRealtimeAgentStatus(): RealtimeAgentStatus {
     return {
       ...base,
       status: "disabled",
-      message: "Set REALTIME_AGENT_ENABLED=true to enable browser voice sessions.",
+      message:
+        "Set REALTIME_AGENT_ENABLED=true to enable browser voice sessions.",
     };
   }
 
@@ -160,7 +173,9 @@ export async function getRealtimeSessionConfig(): Promise<RealtimeSessionConfigR
           audio: {
             input: {
               transcription: {
-                model: process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe",
+                model:
+                  process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL ||
+                  "gpt-4o-mini-transcribe",
               },
               turnDetection: {
                 type: "server_vad",
@@ -177,7 +192,7 @@ export async function getRealtimeSessionConfig(): Promise<RealtimeSessionConfigR
           },
         },
         workflowName: "Suvion Maritime Realtime Agent",
-      }
+      },
     );
 
     return {
@@ -196,14 +211,18 @@ export async function getRealtimeSessionConfig(): Promise<RealtimeSessionConfigR
   }
 }
 
-export function buildRealtimeCallsSessionPayload(config: Record<string, unknown>): Record<string, unknown> {
+export function buildRealtimeCallsSessionPayload(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
   return {
     ...config,
     type: "realtime",
   };
 }
 
-export async function createRealtimeCall(sdp: string): Promise<RealtimeCallResponse> {
+export async function createRealtimeCall(
+  sdp: string,
+): Promise<RealtimeCallResponse> {
   const configResponse = await getRealtimeSessionConfig();
 
   if (configResponse.status !== "completed" || !configResponse.config) {
@@ -215,10 +234,15 @@ export async function createRealtimeCall(sdp: string): Promise<RealtimeCallRespo
     };
   }
 
-  const url = process.env.OPENAI_REALTIME_CALLS_URL || "https://api.openai.com/v1/realtime/calls";
+  const url =
+    process.env.OPENAI_REALTIME_CALLS_URL ||
+    "https://api.openai.com/v1/realtime/calls";
   const form = new FormData();
   form.set("sdp", sdp);
-  form.set("session", JSON.stringify(buildRealtimeCallsSessionPayload(configResponse.config)));
+  form.set(
+    "session",
+    JSON.stringify(buildRealtimeCallsSessionPayload(configResponse.config)),
+  );
 
   try {
     const response = await fetch(url, {
@@ -227,6 +251,7 @@ export async function createRealtimeCall(sdp: string): Promise<RealtimeCallRespo
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: form,
+      signal: AbortSignal.timeout(30_000),
     });
     const responseText = await response.text();
 
@@ -235,7 +260,9 @@ export async function createRealtimeCall(sdp: string): Promise<RealtimeCallRespo
         configured: true,
         enabled: true,
         status: "error",
-        message: responseText || `OpenAI Realtime call failed with HTTP ${response.status}.`,
+        message:
+          responseText ||
+          `OpenAI Realtime call failed with HTTP ${response.status}.`,
       };
     }
 
