@@ -14,7 +14,7 @@
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest"
   },
   "dependencies": {
-    "@openai/agents": "^0.13.0",
+    "@openai/agents": "^0.21.0",
     "@repo/emissions": "*",
     "@repo/logger": "*",
     "ajv": "^8.16.0",
@@ -24,7 +24,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.7.3",
     "mongoose": "^8.4.0",
-    "pdfkit": "^0.15.0",
+    "pdfkit": "^0.20.2",
     "socket.io": "^4.7.5",
     "ws": "^8.17.0"
   },
@@ -36,13 +36,13 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.24",
-    "@types/pdfkit": "^0.13.4",
-    "@types/supertest": "^6.0.2",
+    "@types/pdfkit": "^0.17.7",
+    "@types/supertest": "^7.2.1",
     "@types/ws": "^8.5.10",
     "eslint": "^8.57.0",
     "jest": "^30.2.0",
     "mongodb-memory-server": "^10.0.0",
-    "supertest": "^7.0.0",
+    "supertest": "^7.3.2",
     "ts-jest": "^29.3.4",
     "tsx": "^4.15.0",
     "typescript": "5.5.4"
